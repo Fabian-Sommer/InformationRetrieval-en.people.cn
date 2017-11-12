@@ -1,0 +1,3 @@
+[submodule "searchengine/nltk"]
+	path = searchengine/nltk
+	url = https://github.com/nltk/nltk
