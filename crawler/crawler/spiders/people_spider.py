@@ -15,6 +15,7 @@ class CommentSpider(CrawlSpider):
   # this spider scrapes a single article within the domain zeit.de
   name = 'people'
   allowed_domains = ['en.people.cn']
+  seen_ids = {}
   #urls = [['http://en.people.cn/review/']]
   start_urls = ['http://en.people.cn/review/']
   file = None
@@ -54,15 +55,17 @@ class CommentSpider(CrawlSpider):
       res = requests.get(appended_url)
       data = res.json()
       for post in data['response']:
-        line = "\"" + str(post['id']).encode('utf-8') + "\",\"" + \
-          response.url.encode('utf-8') + "\",\"" + \
-          post['author']['name'].replace('"', '""').encode('utf-8') + "\",\"" + \
-          str(post['createdAt']).encode('utf-8') + "\",\"" + \
-          str(post['parent']).encode('utf-8') + "\",\"" + \
-          str(post['likes']).encode('utf-8') + "\",\"" + \
-          str(post['dislikes']).encode('utf-8') + "\",\"" + \
-          post['raw_message'].replace('"', '""').encode('utf-8') + "\"\n"
-        self.file.write(line)
+        if post['id'] not in self.seen_ids:
+          line = "\"" + str(post['id']).encode('utf-8') + "\",\"" + \
+            response.url.encode('utf-8') + "\",\"" + \
+            post['author']['name'].replace('"', '""').encode('utf-8') + "\",\"" + \
+            str(post['createdAt']).encode('utf-8') + "\",\"" + \
+            str(post['parent']).encode('utf-8') + "\",\"" + \
+            str(post['likes']).encode('utf-8') + "\",\"" + \
+            str(post['dislikes']).encode('utf-8') + "\",\"" + \
+            post['raw_message'].replace('"', '""').encode('utf-8') + "\"\n"
+          self.file.write(line)
+          self.seen_ids[post['id']] = 1;
       if data['cursor']['hasNext']:
         cursor = data['cursor']['next']
       else:

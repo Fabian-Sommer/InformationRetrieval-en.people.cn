@@ -3,6 +3,7 @@ import nltk
 from nltk.corpus import stopwords
 import string
 import pickle
+import math
 
 class Comment():
     cid = 0
@@ -40,7 +41,7 @@ class CSVInputFile(object):
 class SearchEngine():
 
     def __init__(self):
-        self.offset_dict = {}
+        self.seek_list = []
         self.comment_file = None
         self.index_file = None
         self.comment_csv_reader = None
@@ -49,7 +50,7 @@ class SearchEngine():
     def index(self, directory):
         #read csv
         comment_list = []
-        with open(directory+"/comments2.csv", 'rb') as f:
+        with open(directory+"/comments.csv", 'rb') as f:
             csvfile = CSVInputFile(f)
             reader = csv.reader(csvfile, quoting=csv.QUOTE_ALL)
             lastoffset = 0
@@ -102,7 +103,8 @@ class SearchEngine():
             for stem, posting_list in all_comment_dict.iteritems():
                 linestring = ''
                 linestring += '"' + stem.replace('"', '""').encode('utf-8') + '"'
-                for posting_list_part in posting_list:
+                sorted_posting_list = [x for x in sorted(posting_list)]
+                for posting_list_part in sorted_posting_list:
                     linestring += ':'
                     linestring += str(posting_list_part[0])
                     for position in posting_list_part[1]:
@@ -113,72 +115,154 @@ class SearchEngine():
                 offset_dict[stem] = current_offset
                 current_offset += len(linestring)
 
+        #seek list should be a sorted list
+        seek_list = [(k, offset_dict[k]) for k in sorted(offset_dict)]
         #pickle out offset_dict
         with open(directory+"/seek_list.pickle", 'wb') as file:
-            pickle.dump(offset_dict, file, pickle.HIGHEST_PROTOCOL)
-
-
-
-
+            pickle.dump(seek_list, file, pickle.HIGHEST_PROTOCOL)
 
     def loadIndex(self, directory):
         with open(directory+"/seek_list.pickle", 'rb') as file:
-            self.offset_dict = pickle.load(file)
+            self.seek_list = pickle.load(file)
         self.comment_file = open(directory+"/comments.csv", 'rb')
         self.index_file = open(directory+"/index.csv", 'rb')
         csvfile = CSVInputFile(self.comment_file)
         self.comment_csv_reader = csv.reader(self.comment_file, quoting=csv.QUOTE_ALL)
 
-    def search(self, query):
+    # load comment from given offset into comment file
+    def loadComment(self, offset):
+        self.comment_file.seek(offset)
+        comment_as_list = next(self.comment_csv_reader)
+        comment = Comment()
+        comment.cid = int(comment_as_list[0])
+        comment.url = comment_as_list[1]
+        comment.author = comment_as_list[2]
+        comment.time = comment_as_list[3]
+        if comment_as_list[4] == 'None':
+            comment.parent = None
+        else:
+            comment.parent = int(comment_as_list[4])
+        comment.likes = int(comment_as_list[5])
+        comment.dislikes = int(comment_as_list[6])
+        comment.text = comment_as_list[7]
+        return comment
+
+    # binary search in seek list for term as key
+    def get_index_in_seek_list(self, term):
+        lb = 0
+        rb = len(self.seek_list)
+        while lb < rb:
+            m = int(math.floor((lb + rb) / 2))
+            comp_term = self.seek_list[m][0]
+            if (comp_term == term):
+                return m
+            elif comp_term < term:
+                lb = m + 1
+            else:
+                rb = m
+        return -1
+
+    # returns offsets into comment file for all comments containing stem in ascending order
+    def getOffsetsForStem(self, stem):
+        i = self.get_index_in_seek_list(stem)
+        if i == -1: 
+            return []
+        self.index_file.seek(self.seek_list[i][1])
+        posting_list = self.index_file.readline().rstrip('\n')
+        posting_list_parts = posting_list.split(":")
+        return [int(x.split(",")[0]) for x in posting_list_parts[1:]]
+
+    # returns offsets into comment file for all comments matching the query in ascending order
+    def getCommentOffsetsForQuery(self, query):
+        #only single term and BOOLEANS implemented
+        #TODO: handle *, phrase query
+        if " NOT " in query:
+            split_query = query.split(" NOT ", 1)
+            return self.searchBooleanNOT(split_query[0], split_query[1])
+        if " AND " in query:
+            split_query = query.split(" AND ", 1)
+            return self.searchBooleanAND(split_query[0], split_query[1])
+        if " OR " in query:
+            split_query = query.split(" OR ", 1)
+            return self.searchBooleanOR(split_query[0], split_query[1])
+
+        #TODO: check for phrase query or * here
+        
+        #assume we are left with single term at this point
+        return self.getOffsetsForStem(self.stemmer.stem(query.lower()))
+
+    def searchBooleanNOT(self, query1, query2):
         results = []
-
-        #for now, query is single word
-        query_term = self.stemmer.stem(query.lower())
-
-        if query_term in self.offset_dict:
-            index_offset = self.offset_dict[query_term]
-            self.index_file.seek(index_offset)
-            posting_list = self.index_file.readline().rstrip('\n')
-            posting_list_parts = posting_list.split(":")
-            result_offsets = []
-            for i, posting_list_part in enumerate(posting_list_parts):
-                if i == 0:
-                    # this is just the query_term
-                    continue
-                if i > 5:
-                    # we only want 5 results for now
-                    continue
-                entries = posting_list_part.split(",")
-                result_offsets.append(int(entries[0])) # we dont need more information yet
-
-            for comment_offset in result_offsets:
-                self.comment_file.seek(comment_offset)
-                #parse a single comment
-                comment_as_list = next(self.comment_csv_reader)
-                comment = Comment()
-                comment.cid = int(comment_as_list[0])
-                comment.url = comment_as_list[1]
-                comment.author = comment_as_list[2]
-                comment.time = comment_as_list[3]
-                if comment_as_list[4] == 'None':
-                    comment.parent = None
-                else:
-                    comment.parent = int(comment_as_list[4])
-                comment.likes = int(comment_as_list[5])
-                comment.dislikes = int(comment_as_list[6])
-                comment.text = comment_as_list[7]
-
-                results.append(comment.text)
-
+        q1_results = self.getCommentOffsetsForQuery(query1)
+        q2_results = self.getCommentOffsetsForQuery(query2)
+        i = 0
+        j = 0
+        while i < len(q1_results):
+            if j == len(q2_results):
+                results.append(q1_results[i])
+                i += 1
+            elif q1_results[i] < q2_results[j]:
+                results.append(q1_results[i])
+                i += 1
+            elif q1_results[i] > q2_results[j]:
+                j += 1
+            else:
+                i += 1
+                j += 1
         return results
 
-    def printAssignment2QueryResults(self):
-        print searchEngine.search("October")
-        print searchEngine.search("jobs")
-        print searchEngine.search("Trump")
-        print searchEngine.search("hate")
+    def searchBooleanAND(self, query1, query2):
+        results = []
+        q1_results = self.getCommentOffsetsForQuery(query1)
+        q2_results = self.getCommentOffsetsForQuery(query2)
+        i = 0
+        j = 0
+        while i < len(q1_results) and j < len(q2_results):
+            if q1_results[i] < q2_results[j]:
+                i += 1
+            elif q1_results[i] > q2_results[j]:
+                j += 1
+            else:
+                results.append(q1_results[i])
+                i += 1
+                j += 1
+        return results
+
+    def searchBooleanOR(self, query1, query2):
+        results = []
+        q1_results = self.getCommentOffsetsForQuery(query1)
+        q2_results = self.getCommentOffsetsForQuery(query2)
+        i = 0
+        j = 0
+        while i < len(q1_results) or j < len(q2_results):
+            if i == len(q1_results):
+                results.append(q2_results[j])
+                j += 1
+            elif j == len(q2_results):
+                results.append(q1_results[i])
+                i += 1
+            elif q1_results[i] < q2_results[j]:
+                results.append(q1_results[i])
+                i += 1
+            elif q1_results[i] > q2_results[j]:
+                results.append(q2_results[j])
+                j += 1
+            else:
+                results.append(q1_results[i])
+                i += 1
+                j += 1
+        return results
+
+
+    def search(self, query):
+        comment_offsets = self.getCommentOffsetsForQuery(query)
+        print len(comment_offsets)
+        if len(comment_offsets) > 0:
+            example_comment = self.loadComment(comment_offsets[0])
+            print example_comment.text
+
 
 searchEngine = SearchEngine()
 #searchEngine.index("E:/projects/InformationRetrieval/searchengine")
 searchEngine.loadIndex("E:/projects/InformationRetrieval/searchengine")
-searchEngine.printAssignment2QueryResults()
+searchEngine.search("party AND chancellor")
