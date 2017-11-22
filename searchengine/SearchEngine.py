@@ -1,9 +1,12 @@
+#!/usr/bin/python
+
 import csv
 import nltk
 from nltk.corpus import stopwords
 import string
 import pickle
 import math
+import collections
 
 class Comment():
     cid = 0
@@ -14,7 +17,7 @@ class Comment():
     likes = 0
     dislikes = 0
     text = ''
-    fileoffset = 0
+    file_offset = 0
     token_list = []
 
 class CSVInputFile(object):
@@ -53,7 +56,7 @@ class SearchEngine():
         with open(directory+"/comments.csv", 'rb') as f:
             csvfile = CSVInputFile(f)
             reader = csv.reader(csvfile, quoting=csv.QUOTE_ALL)
-            lastoffset = 0
+            last_offset = 0
             for row in reader:
                 comment = Comment()
                 comment.cid = int(row[0])
@@ -67,20 +70,22 @@ class SearchEngine():
                 comment.likes = int(row[5])
                 comment.dislikes = int(row[6])
                 comment.text = row[7]
-                comment.fileoffset = lastoffset
-                lastoffset = f.tell()
+                comment.file_offset = last_offset
+                last_offset = f.tell()
                 comment_list.append(comment)
+
         print "Parsed csv into " + str(len(comment_list)) + " comments."
 
         #process comments (tokenize, remove stopwords, stem tokens)
-        prog = 0
+        comments_processed = 0
         stops = set(stopwords.words("english") + list(string.punctuation))
         for comment in comment_list:
-            comment.token_list = [self.stemmer.stem(word) for word in nltk.word_tokenize(unicode(comment.text.lower(), 'utf-8')) if word not in stops]
-            prog += 1
-            if prog % 1000 == 0:
-                print prog / 1000
-        
+            raw_tokens = nltk.word_tokenize(unicode(comment.text.lower(), 'utf-8'))
+            comment.token_list = [self.stemmer.stem(t) for t in raw_tokens if t not in stops]
+            comments_processed += 1
+            if comments_processed % 1000 == 0:
+                print str(comments_processed) + "/" + str(len(comment_list)) + " comments processed"
+
         #create index
         all_comment_dict = {}
         for comment in comment_list:
@@ -94,29 +99,32 @@ class SearchEngine():
             for stem, positions in comment_dict.iteritems():
                 if not stem in all_comment_dict:
                     all_comment_dict[stem] = []
-                all_comment_dict[stem].append([comment.fileoffset, positions])
-        
+                all_comment_dict[stem].append([comment.file_offset, positions])
+        # positions = list of token pos in comment, ignoring stopwords -> todo include stopwords
+        sorted_all_comment_dict = collections.OrderedDict(sorted(all_comment_dict.items(), key=lambda t:t[0]))
+
         #save index as csv
         offset_dict = {}
         current_offset = 0
         with open(directory+"/index.csv", 'wb') as file:
-            for stem, posting_list in all_comment_dict.iteritems():
-                linestring = ''
-                linestring += '"' + stem.replace('"', '""').encode('utf-8') + '"'
+            for stem, posting_list in sorted_all_comment_dict.iteritems():
+                line_string = ''
+                line_string += '"' + stem.replace('"', '""').encode('utf-8') + '"'
                 sorted_posting_list = [x for x in sorted(posting_list)]
                 for posting_list_part in sorted_posting_list:
-                    linestring += ':'
-                    linestring += str(posting_list_part[0])
+                    line_string += ':'
+                    line_string += str(posting_list_part[0])
                     for position in posting_list_part[1]:
-                        linestring += ','
-                        linestring += str(position)
-                linestring += '\n'
-                file.write(linestring)
+                        line_string += ','
+                        line_string += str(position)
+                line_string += '\n'
+                file.write(line_string)
                 offset_dict[stem] = current_offset
-                current_offset += len(linestring)
+                current_offset += len(line_string)
 
         #seek list should be a sorted list
         seek_list = [(k, offset_dict[k]) for k in sorted(offset_dict)]
+
         #pickle out offset_dict
         with open(directory+"/seek_list.pickle", 'wb') as file:
             pickle.dump(seek_list, file, pickle.HIGHEST_PROTOCOL)
@@ -130,7 +138,7 @@ class SearchEngine():
         self.comment_csv_reader = csv.reader(self.comment_file, quoting=csv.QUOTE_ALL)
 
     # load comment from given offset into comment file
-    def loadComment(self, offset):
+    def load_comment(self, offset):
         self.comment_file.seek(offset)
         comment_as_list = next(self.comment_csv_reader)
         comment = Comment()
@@ -154,7 +162,7 @@ class SearchEngine():
         while lb < rb:
             m = int(math.floor((lb + rb) / 2))
             comp_term = self.seek_list[m][0]
-            if (comp_term == term):
+            if comp_term == term:
                 return m
             elif comp_term < term:
                 lb = m + 1
@@ -162,41 +170,109 @@ class SearchEngine():
                 rb = m
         return -1
 
+    # return range of indices from first to last term which could start with prefix in seeklist
+    def get_index_range_in_seek_list(self, prefix):
+        # if stem starts with prefix the full word will as well
+        # if prefix starts with stem the full word might start with prefix
+        def maybe_prefix(stem):
+            return stem.startswith(prefix) or prefix.startswith(stem)
+
+        lb = 0
+        rb = len(self.seek_list)
+        first_found = None
+        while lb < rb and first_found == None:
+            m = int(math.floor((lb + rb) / 2))
+            stem = self.seek_list[m][0]
+            if maybe_prefix(stem):
+                first_found = m
+            elif stem < prefix:
+                lb = m + 1
+            else:
+                rb = m
+
+        if first_found == None:
+            return range(0, 0)
+
+        # could be done in O(logN) instead of O(N)
+        lowest_index = first_found
+        while lowest_index > 0 and maybe_prefix(self.seek_list[lowest_index-1][0]):
+            lowest_index -= 1
+
+        highest_index = first_found+1
+        while highest_index < len(self.seek_list) and maybe_prefix(self.seek_list[highest_index][0]):
+            highest_index += 1
+
+        # inclusive lowest_index, exclusive highest_index
+        return range(lowest_index, highest_index)
+
     # returns offsets into comment file for all comments containing stem in ascending order
-    def getOffsetsForStem(self, stem):
+    def get_offsets_for_stem(self, stem):
         i = self.get_index_in_seek_list(stem)
-        if i == -1: 
+        if i == -1:
             return []
         self.index_file.seek(self.seek_list[i][1])
         posting_list = self.index_file.readline().rstrip('\n')
         posting_list_parts = posting_list.split(":")
         return [int(x.split(",")[0]) for x in posting_list_parts[1:]]
 
+    # returns offsets into comment file for all comments containing stem in ascending order,
+    # where either prefix starts with stem (false positive possible) or stem starts with prefix
+    def get_offsets_for_prefix(self, prefix):
+        index_range = self.get_index_range_in_seek_list(prefix)
+        offsets_for_prefix = set() # prevent duplicate offsets
+        for i in index_range:
+            self.index_file.seek(self.seek_list[i][1])
+            posting_list = self.index_file.readline().rstrip('\n')
+            posting_list_parts = posting_list.split(":")
+            offsets = [int(x.split(",")[0]) for x in posting_list_parts[1:]]
+            for offset in offsets:
+                offsets_for_prefix.add(offset)
+        return offsets_for_prefix
+
     # returns offsets into comment file for all comments matching the query in ascending order
-    def getCommentOffsetsForQuery(self, query):
+    def get_comment_offsets_for_query(self, query):
         #only single term and BOOLEANS implemented
-        #TODO: handle *, phrase query
+        # split all ANDs, not just 1
         if " NOT " in query:
             split_query = query.split(" NOT ", 1)
-            return self.searchBooleanNOT(split_query[0], split_query[1])
+            return self.search_boolean_NOT(split_query[0], split_query[1])
         if " AND " in query:
             split_query = query.split(" AND ", 1)
-            return self.searchBooleanAND(split_query[0], split_query[1])
+            return self.search_boolean_AND(split_query[0], split_query[1])
         if " OR " in query:
             split_query = query.split(" OR ", 1)
-            return self.searchBooleanOR(split_query[0], split_query[1])
+            return self.search_boolean_OR(split_query[0], split_query[1])
 
-        #TODO: check for phrase query or * here
-        
         #assume we are left with single term at this point
-        return self.getOffsetsForStem(self.stemmer.stem(query.lower()))
+        assert(" " not in query)
+        prefix = query[:-1].lower() if query[-1] == "*" else None
 
-    def searchBooleanNOT(self, query1, query2):
+        if(prefix == None):
+            return self.get_offsets_for_stem(self.stemmer.stem(query.lower()))
+        else:
+            offsets_for_prefix = self.get_offsets_for_prefix(prefix)
+            # filter false positives
+            result = []
+            for offset in offsets_for_prefix:
+                comment = self.load_comment(offset)
+                raw_tokens = nltk.word_tokenize(unicode(comment.text.lower(), 'utf-8'))
+                for token in raw_tokens:
+                    if token.startswith(prefix):
+                        result.append(offset)
+                        break
+            return result
+
+
+        #TODO: check for phrase query
+
+
+    def search_boolean_NOT(self, query1, query2):
         results = []
-        q1_results = self.getCommentOffsetsForQuery(query1)
-        q2_results = self.getCommentOffsetsForQuery(query2)
+        q1_results = self.get_comment_offsets_for_query(query1)
+        q2_results = self.get_comment_offsets_for_query(query2)
         i = 0
         j = 0
+        # should be equivalent: results = [ result for result in q1_results if result not in q2_results ]
         while i < len(q1_results):
             if j == len(q2_results):
                 results.append(q1_results[i])
@@ -211,10 +287,10 @@ class SearchEngine():
                 j += 1
         return results
 
-    def searchBooleanAND(self, query1, query2):
+    def search_boolean_AND(self, query1, query2):
         results = []
-        q1_results = self.getCommentOffsetsForQuery(query1)
-        q2_results = self.getCommentOffsetsForQuery(query2)
+        q1_results = self.get_comment_offsets_for_query(query1)
+        q2_results = self.get_comment_offsets_for_query(query2)
         i = 0
         j = 0
         while i < len(q1_results) and j < len(q2_results):
@@ -228,10 +304,10 @@ class SearchEngine():
                 j += 1
         return results
 
-    def searchBooleanOR(self, query1, query2):
+    def search_boolean_OR(self, query1, query2):
         results = []
-        q1_results = self.getCommentOffsetsForQuery(query1)
-        q2_results = self.getCommentOffsetsForQuery(query2)
+        q1_results = self.get_comment_offsets_for_query(query1)
+        q2_results = self.get_comment_offsets_for_query(query2)
         i = 0
         j = 0
         while i < len(q1_results) or j < len(q2_results):
@@ -255,14 +331,15 @@ class SearchEngine():
 
 
     def search(self, query):
-        comment_offsets = self.getCommentOffsetsForQuery(query)
+        comment_offsets = self.get_comment_offsets_for_query(query)
         print len(comment_offsets)
         if len(comment_offsets) > 0:
-            example_comment = self.loadComment(comment_offsets[0])
+            example_comment = self.load_comment(comment_offsets[0])
             print example_comment.text
 
 
-searchEngine = SearchEngine()
-#searchEngine.index("E:/projects/InformationRetrieval/searchengine")
-searchEngine.loadIndex("E:/projects/InformationRetrieval/searchengine")
-searchEngine.search("party AND chancellor")
+search_engine = SearchEngine()
+search_engine.index("./fake_data")
+search_engine.loadIndex("./fake_data")
+print search_engine.get_comment_offsets_for_query("interna* NOT lesson")
+# search_engine.search("part*")
