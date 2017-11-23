@@ -6,7 +6,12 @@ from nltk.corpus import stopwords
 import string
 import pickle
 import math
-import collections
+from collections import OrderedDict
+from sys import argv
+
+if len(argv) < 3:
+    print "usage: python SearchEngine.py path/to/data query"
+    exit()
 
 class Comment():
     cid = 0
@@ -22,8 +27,8 @@ class Comment():
 
 class CSVInputFile(object):
     """ File-like object. """
-    def __init__(self, file):
-        self.file = file
+    def __init__(self, csv_file):
+        self.csv_file = csv_file
         self.offset = None
         self.linelen = None
 
@@ -31,8 +36,8 @@ class CSVInputFile(object):
         return self
 
     def __next__(self):
-        offset = self.file.tell()
-        data = self.file.readline()
+        offset = self.csv_file.tell()
+        data = self.csv_file.readline()
         if not data:
             raise StopIteration
         self.offset = offset
@@ -54,8 +59,7 @@ class SearchEngine():
         #read csv
         comment_list = []
         with open(directory+"/comments.csv", 'rb') as f:
-            csvfile = CSVInputFile(f)
-            reader = csv.reader(csvfile, quoting=csv.QUOTE_ALL)
+            reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
             last_offset = 0
             for row in reader:
                 comment = Comment()
@@ -101,12 +105,12 @@ class SearchEngine():
                     all_comment_dict[stem] = []
                 all_comment_dict[stem].append([comment.file_offset, positions])
         # positions = list of token pos in comment, ignoring stopwords -> todo include stopwords
-        sorted_all_comment_dict = collections.OrderedDict(sorted(all_comment_dict.items(), key=lambda t:t[0]))
+        sorted_all_comment_dict = OrderedDict(sorted(all_comment_dict.items(), key=lambda t:t[0]))
 
         #save index as csv
         offset_dict = {}
         current_offset = 0
-        with open(directory+"/index.csv", 'wb') as file:
+        with open(directory+"/index.csv", 'wb') as f:
             for stem, posting_list in sorted_all_comment_dict.iteritems():
                 line_string = ''
                 line_string += '"' + stem.replace('"', '""').encode('utf-8') + '"'
@@ -118,7 +122,7 @@ class SearchEngine():
                         line_string += ','
                         line_string += str(position)
                 line_string += '\n'
-                file.write(line_string)
+                f.write(line_string)
                 offset_dict[stem] = current_offset
                 current_offset += len(line_string)
 
@@ -126,16 +130,15 @@ class SearchEngine():
         seek_list = [(k, offset_dict[k]) for k in sorted(offset_dict)]
 
         #pickle out offset_dict
-        with open(directory+"/seek_list.pickle", 'wb') as file:
-            pickle.dump(seek_list, file, pickle.HIGHEST_PROTOCOL)
+        with open(directory+"/seek_list.pickle", 'wb') as f:
+            pickle.dump(seek_list, f, pickle.HIGHEST_PROTOCOL)
 
     def loadIndex(self, directory):
-        with open(directory+"/seek_list.pickle", 'rb') as file:
-            self.seek_list = pickle.load(file)
+        with open(directory+"/seek_list.pickle", 'rb') as f:
+            self.seek_list = pickle.load(f)
         self.comment_file = open(directory+"/comments.csv", 'rb')
         self.index_file = open(directory+"/index.csv", 'rb')
-        csvfile = CSVInputFile(self.comment_file)
-        self.comment_csv_reader = csv.reader(self.comment_file, quoting=csv.QUOTE_ALL)
+        self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file), quoting=csv.QUOTE_ALL)
 
     # load comment from given offset into comment file
     def load_comment(self, offset):
@@ -339,7 +342,7 @@ class SearchEngine():
 
 
 search_engine = SearchEngine()
-search_engine.index("./fake_data")
-search_engine.loadIndex("./fake_data")
-print search_engine.get_comment_offsets_for_query("interna* NOT lesson")
+search_engine.index(argv[1])
+search_engine.loadIndex(argv[1])
+print search_engine.get_comment_offsets_for_query(" ".join(argv[2:]))
 # search_engine.search("part*")
