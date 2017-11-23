@@ -59,18 +59,15 @@ class SearchEngine():
         #read csv
         comment_list = []
         with open(directory+"/comments.csv", 'rb') as f:
-            reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
+            csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
             last_offset = 0
-            for row in reader:
+            for row in csv_reader:
                 comment = Comment()
                 comment.cid = int(row[0])
                 comment.url = row[1]
                 comment.author = row[2]
                 comment.time = row[3]
-                if row[4] == 'None':
-                    comment.parent = None
-                else:
-                    comment.parent = int(row[4])
+                comment.parent = None if row[4] == 'None' else int(row[4])
                 comment.likes = int(row[5])
                 comment.dislikes = int(row[6])
                 comment.text = row[7]
