@@ -2,16 +2,14 @@
 
 import csv
 import nltk
+import Stemmer
 from nltk.corpus import stopwords
 import string
 import pickle
 import math
 from collections import OrderedDict
-from sys import argv
-
-if len(argv) < 3:
-    print "usage: python SearchEngine.py path/to/data query"
-    exit()
+import random
+import re
 
 class Comment():
     cid = 0
@@ -53,7 +51,8 @@ class SearchEngine():
         self.comment_file = None
         self.index_file = None
         self.comment_csv_reader = None
-        self.stemmer = nltk.stem.PorterStemmer()
+        self.stemmer = Stemmer.Stemmer('english')
+        # self.stemmer = nltk.stem.PorterStemmer()
 
     def index(self, directory):
         #read csv
@@ -79,13 +78,15 @@ class SearchEngine():
 
         #process comments (tokenize, remove stopwords, stem tokens)
         comments_processed = 0
-        stops = set(stopwords.words("english") + list(string.punctuation))
+        # phrase queries need stopwords...
+        # stops = set(stopwords.words("english") + list(string.punctuation))
         for comment in comment_list:
             raw_tokens = nltk.word_tokenize(unicode(comment.text.lower(), 'utf-8'))
-            comment.token_list = [self.stemmer.stem(t) for t in raw_tokens if t not in stops]
+            comment.token_list = self.stemmer.stemWords(raw_tokens)
             comments_processed += 1
             if comments_processed % 1000 == 0:
                 print str(comments_processed) + "/" + str(len(comment_list)) + " comments processed"
+        print str(comments_processed) + "/" + str(len(comment_list)) + " comments processed - done"
 
         #create index
         all_comment_dict = {}
@@ -229,10 +230,21 @@ class SearchEngine():
                 offsets_for_prefix.add(offset)
         return offsets_for_prefix
 
+    def get_comment_offsets_for_phrase_query(self, query):
+        match = re.search(r'\'[^"]*\'', query)
+        if not match:
+            print "illegal phrase query"
+            exit()
+        phrase = match.group()[1:-1]
+        new_query = " AND ".join(phrase.split(" "))
+        possible_matches = self.get_comment_offsets_for_query(new_query)
+        return [x for x in possible_matches if phrase in self.load_comment(x).text.lower()]
+
     # returns offsets into comment file for all comments matching the query in ascending order
     def get_comment_offsets_for_query(self, query):
-        #only single term and BOOLEANS implemented
-        # split all ANDs, not just 1
+        if "\'" in query:
+            return self.get_comment_offsets_for_phrase_query(query)
+
         if " NOT " in query:
             split_query = query.split(" NOT ", 1)
             return self.search_boolean_NOT(split_query[0], split_query[1])
@@ -248,7 +260,7 @@ class SearchEngine():
         prefix = query[:-1].lower() if query[-1] == "*" else None
 
         if(prefix == None):
-            return self.get_offsets_for_stem(self.stemmer.stem(query.lower()))
+            return self.get_offsets_for_stem(self.stemmer.stemWord(query.lower()))
         else:
             offsets_for_prefix = self.get_offsets_for_prefix(prefix)
             # filter false positives
@@ -331,15 +343,23 @@ class SearchEngine():
 
 
     def search(self, query):
+        print "--------------------------------------------------searching for \"" + query + "\":"
         comment_offsets = self.get_comment_offsets_for_query(query)
-        print len(comment_offsets)
+        print str(len(comment_offsets)) + " comments matched the query"
         if len(comment_offsets) > 0:
-            example_comment = self.load_comment(comment_offsets[0])
+            print "example:"
+            random_index = random.randrange(0, len(comment_offsets))
+            example_comment = self.load_comment(comment_offsets[random_index])
             print example_comment.text
+        print
 
 
+data_folder = "data/real"
 search_engine = SearchEngine()
-search_engine.index(argv[1])
-search_engine.loadIndex(argv[1])
-print search_engine.get_comment_offsets_for_query(" ".join(argv[2:]))
-# search_engine.search("part*")
+# search_engine.index(data_folder)
+search_engine.loadIndex(data_folder)
+# query = "\'christmas market\'"
+queries = [ "party AND chancellor", "party NOT politics", "war OR conflict", "euro* NOT europe", \
+            "publi* OR moderation", "'the european union'", "'christmas market'" ]
+for query in queries:
+    search_engine.search(query)
