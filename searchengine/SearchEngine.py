@@ -1,5 +1,5 @@
 #!/usr/bin/python
-
+from __future__ import division
 import csv
 import nltk
 import Stemmer
@@ -21,7 +21,7 @@ class Comment():
     dislikes = 0
     text = ''
     file_offset = 0
-    token_list = []
+    term_list = []
 
 class CSVInputFile(object):
     """ File-like object. """
@@ -51,6 +51,8 @@ class SearchEngine():
         self.comment_file = None
         self.index_file = None
         self.comment_csv_reader = None
+        self.comment_term_count_dict = None
+        self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
         # self.stemmer = nltk.stem.PorterStemmer()
 
@@ -82,7 +84,7 @@ class SearchEngine():
         # stops = set(stopwords.words("english") + list(string.punctuation))
         for comment in comment_list:
             raw_tokens = nltk.word_tokenize(unicode(comment.text.lower(), 'utf-8'))
-            comment.token_list = self.stemmer.stemWords(raw_tokens)
+            comment.term_list = self.stemmer.stemWords(raw_tokens)
             comments_processed += 1
             if comments_processed % 1000 == 0:
                 print str(comments_processed) + "/" + str(len(comment_list)) + " comments processed"
@@ -90,10 +92,15 @@ class SearchEngine():
 
         #create index
         all_comment_dict = {}
+        term_count_dict = {}
+        comment_term_count_dict = {}
+        collection_term_count = 0
         for comment in comment_list:
             position = 0
             comment_dict = {}
-            for stem in comment.token_list:
+            comment_term_count_dict[comment.file_offset] = len(comment.term_list)
+            collection_term_count += len(comment.term_list)
+            for stem in comment.term_list:
                 if not stem in comment_dict:
                     comment_dict[stem] = []
                 comment_dict[stem].append(position)
@@ -101,7 +108,9 @@ class SearchEngine():
             for stem, positions in comment_dict.iteritems():
                 if not stem in all_comment_dict:
                     all_comment_dict[stem] = []
+                    term_count_dict[stem] = 0
                 all_comment_dict[stem].append([comment.file_offset, positions])
+                term_count_dict[stem] += len(positions)
         # positions = list of token pos in comment, ignoring stopwords -> todo include stopwords
         sorted_all_comment_dict = OrderedDict(sorted(all_comment_dict.items(), key=lambda t:t[0]))
 
@@ -112,6 +121,7 @@ class SearchEngine():
             for stem, posting_list in sorted_all_comment_dict.iteritems():
                 line_string = ''
                 line_string += '"' + stem.replace('"', '""').encode('utf-8') + '"'
+                line_string += ':' + str(term_count_dict[stem])
                 sorted_posting_list = [x for x in sorted(posting_list)]
                 for posting_list_part in sorted_posting_list:
                     line_string += ':'
@@ -131,12 +141,51 @@ class SearchEngine():
         with open(directory+"/seek_list.pickle", 'wb') as f:
             pickle.dump(seek_list, f, pickle.HIGHEST_PROTOCOL)
 
+        with open(directory+"/comment_term_count_dict.pickle", 'wb') as f:
+            pickle.dump(comment_term_count_dict, f, pickle.HIGHEST_PROTOCOL)
+
+        with open(directory+"/collection_term_count.pickle", 'wb') as f:
+            pickle.dump(collection_term_count, f, pickle.HIGHEST_PROTOCOL)
+
     def loadIndex(self, directory):
         with open(directory+"/seek_list.pickle", 'rb') as f:
             self.seek_list = pickle.load(f)
+        with open(directory+"/comment_term_count_dict.pickle", 'rb') as f:
+            self.comment_term_count_dict = pickle.load(f)
+        with open(directory+"/collection_term_count.pickle", 'rb') as f:
+            self.collection_term_count = pickle.load(f)
         self.comment_file = open(directory+"/comments.csv", 'rb')
         self.index_file = open(directory+"/index.csv", 'rb')
         self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file), quoting=csv.QUOTE_ALL)
+
+    # returns score for ranking based on natural language model with dirichlet smoothing
+    # query_terms: list of query terms, stemmed and filtered
+    # comment_offset: offset of comment into comment file
+    def get_dirichlet_smoothed_score(self, query_terms, comment_offset):
+        mu = 1500
+        score = 0
+        terms_in_comment = self.comment_term_count_dict[comment_offset]
+
+        for query_term in query_terms:
+            i = self.get_index_in_seek_list(query_term)
+            if i == -1:
+                next
+            self.index_file.seek(self.seek_list[i][1])
+            posting_list = self.index_file.readline().rstrip('\n')
+            posting_list_parts = posting_list.split(":")
+            c_query_term = int(posting_list_parts[1])
+            fD_query_term = 0
+            for comment_list in posting_list_parts[2:]:
+                #possible performance improvement: this can be sorted previously, then use bin. search
+                occurences = comment_list.split(',')
+                if int(occurences[0]) == comment_offset:
+                    fD_query_term = len(occurences) - 1
+                    break
+
+            score += math.log((fD_query_term + (mu * c_query_term / self.collection_term_count))/(terms_in_comment + mu))
+
+        return score
+            
 
     # load comment from given offset into comment file
     def load_comment(self, offset):
@@ -214,7 +263,7 @@ class SearchEngine():
         self.index_file.seek(self.seek_list[i][1])
         posting_list = self.index_file.readline().rstrip('\n')
         posting_list_parts = posting_list.split(":")
-        return [int(x.split(",")[0]) for x in posting_list_parts[1:]]
+        return [int(x.split(",")[0]) for x in posting_list_parts[2:]]
 
     # returns offsets into comment file for all comments containing stem in ascending order,
     # where either prefix starts with stem (false positive possible) or stem starts with prefix
@@ -225,7 +274,7 @@ class SearchEngine():
             self.index_file.seek(self.seek_list[i][1])
             posting_list = self.index_file.readline().rstrip('\n')
             posting_list_parts = posting_list.split(":")
-            offsets = [int(x.split(",")[0]) for x in posting_list_parts[1:]]
+            offsets = [int(x.split(",")[0]) for x in posting_list_parts[2:]]
             for offset in offsets:
                 offsets_for_prefix.add(offset)
         return offsets_for_prefix
@@ -274,8 +323,6 @@ class SearchEngine():
                         break
             return result
 
-
-        #TODO: check for phrase query
 
 
     def search_boolean_NOT(self, query1, query2):
@@ -356,10 +403,12 @@ class SearchEngine():
 
 data_folder = "data/real"
 search_engine = SearchEngine()
-# search_engine.index(data_folder)
+#search_engine.index(data_folder)
 search_engine.loadIndex(data_folder)
 # query = "\'christmas market\'"
 queries = [ "party AND chancellor", "party NOT politics", "war OR conflict", "euro* NOT europe", \
             "publi* OR moderation", "'the european union'", "'christmas market'" ]
-for query in queries:
-    search_engine.search(query)
+#for query in queries:
+    #search_engine.search(query)
+
+print search_engine.get_dirichlet_smoothed_score(["Tragic"], 0)
