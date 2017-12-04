@@ -163,8 +163,7 @@ class SearchEngine():
     # returns score for ranking based on natural language model with dirichlet smoothing
     # query_terms: list of query terms, stemmed and filtered
     # comment_offset: offset of comment into comment file
-    def get_dirichlet_smoothed_score(self, query_terms, comment_offset):
-        mu = 1500
+    def get_dirichlet_smoothed_score(self, query_terms, comment_offset, mu = 1500):
         score = 0
         terms_in_comment = self.comment_term_count_dict[comment_offset]
 
@@ -177,6 +176,7 @@ class SearchEngine():
             posting_list_parts = posting_list.split(":")
             c_query_term = int(posting_list_parts[1])
             fD_query_term = 0
+
             for comment_list in posting_list_parts[2:]:
                 #possible performance improvement: this can be sorted previously, then use bin. search
                 occurences = comment_list.split(',')
@@ -187,7 +187,6 @@ class SearchEngine():
             score += math.log((fD_query_term + (mu * c_query_term / self.collection_term_count))/(terms_in_comment + mu))
 
         return score
-            
 
     # load comment from given offset into comment file
     def load_comment(self, offset):
