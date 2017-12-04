@@ -10,6 +10,8 @@ import math
 from collections import OrderedDict
 import random
 import re
+import heapq
+import time
 
 class Comment():
     cid = 0
@@ -388,27 +390,53 @@ class SearchEngine():
                 j += 1
         return results
 
+    def is_boolean_query(self, query):
+        return "\'" in query or " AND " in query or " OR " in query or " NOT " in query or "*" in query
 
-    def search(self, query):
+
+    def search(self, query, top_k = 10):
         print "--------------------------------------------------searching for \"" + query + "\":"
-        comment_offsets = self.get_comment_offsets_for_query(query)
-        print str(len(comment_offsets)) + " comments matched the query"
-        if len(comment_offsets) > 0:
-            print "example:"
-            random_index = random.randrange(0, len(comment_offsets))
-            example_comment = self.load_comment(comment_offsets[random_index])
-            print example_comment.text
-        print
+        if self.is_boolean_query(query):
+            comment_offsets = self.get_comment_offsets_for_query(query)
+            print str(len(comment_offsets)) + " comments matched the query"
+            if len(comment_offsets) > 0:
+                print "example:"
+                random_index = random.randrange(0, len(comment_offsets))
+                example_comment = self.load_comment(comment_offsets[random_index])
+                print example_comment.text
+            print
+        else:
+            or_query = " OR ".join(query.split(" "))
+            t_begin_searching = time.clock()
+            comment_offsets = self.get_comment_offsets_for_query(or_query)
+            print str(time.clock() - t_begin_searching) + " seconds for searching"
+            if len(comment_offsets) == 0:
+                print "no comments matched the query"
+                return
+            print str(len(comment_offsets)) + " comments matched the query, calculating scores..."
+            t_begin_ranking = time.clock()
+            top_k_rated_comments = [] # min heap of tuples (score, comment_offset)
+            for comment_offset in comment_offsets:
+                score = self.get_dirichlet_smoothed_score(query, comment_offset)
+                if len(top_k_rated_comments) < top_k:
+                    heapq.heappush(top_k_rated_comments, (score, comment_offset))
+                else:
+                    heapq.heappushpop(top_k_rated_comments, (score, comment_offset))
+            t_elapsed = time.clock() - t_begin_ranking
+            print str(t_elapsed) + " seconds for ranking, " + str(t_elapsed/len(comment_offsets)) + " per comment\n\n"
+            top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
+            for score, comment_offset in top_k_rated_comments:
+                print "score: " + str(score) + ", text:"
+                print self.load_comment(comment_offset).text + "\n"
+
 
 
 data_folder = "data/real"
 search_engine = SearchEngine()
-#search_engine.index(data_folder)
+# search_engine.index(data_folder)
 search_engine.loadIndex(data_folder)
-# query = "\'christmas market\'"
-queries = [ "party AND chancellor", "party NOT politics", "war OR conflict", "euro* NOT europe", \
-            "publi* OR moderation", "'the european union'", "'christmas market'" ]
+query = "tragic west"
 #for query in queries:
-    #search_engine.search(query)
+search_engine.search(query)
 
-print search_engine.get_dirichlet_smoothed_score(["Tragic"], 0)
+# print search_engine.get_dirichlet_smoothed_score(["Tragic"], 0)
