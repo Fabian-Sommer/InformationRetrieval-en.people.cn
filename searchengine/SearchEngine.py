@@ -162,11 +162,9 @@ class SearchEngine():
 
     # returns score for ranking based on natural language model with dirichlet smoothing
     # query_terms: list of query terms, stemmed and filtered
-    # comment_offset: offset of comment into comment file
-    def get_dirichlet_smoothed_score(self, query_terms, comment_offset, mu = 1500):
-        score = 0
-        terms_in_comment = self.comment_term_count_dict[comment_offset]
-
+    # comment_offsets: list of offsets of comments into comment file
+    def get_dirichlet_smoothed_score(self, query_terms, comment_offsets, mu = 1500):
+        score_list = [0 for x in comment_offsets]
         for query_term in query_terms:
             i = self.get_index_in_seek_list(query_term)
             if i == -1:
@@ -175,18 +173,28 @@ class SearchEngine():
             posting_list = self.index_file.readline().rstrip('\n')
             posting_list_parts = posting_list.split(":")
             c_query_term = int(posting_list_parts[1])
-            fD_query_term = 0
-
+            comment_offsets_index = 0
             for comment_list in posting_list_parts[2:]:
-                #possible performance improvement: this can be sorted previously, then use bin. search
-                occurences = comment_list.split(',')
-                if int(occurences[0]) == comment_offset:
-                    fD_query_term = len(occurences) - 1
+                if comment_offsets_index >= len(comment_offsets):
                     break
-
-            score += math.log((fD_query_term + (mu * c_query_term / self.collection_term_count))/(terms_in_comment + mu))
-
-        return score
+                occurences = comment_list.split(',')
+                while int(occurences[0]) > comment_offsets[comment_offsets_index]:
+                    #term not found -> 0 occurences in comment
+                    score_list[comment_offsets_index] += math.log(((mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
+                    comment_offsets_index += 1
+                    if comment_offsets_index >= len(comment_offsets):
+                        break
+                    
+                if int(occurences[0]) == comment_offsets[comment_offsets_index]:
+                    fD_query_term = len(occurences) - 1
+                    score_list[comment_offsets_index] += math.log((fD_query_term + (mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
+                    comment_offsets_index += 1
+            while comment_offsets_index < len(comment_offsets):
+                #no matches found
+                score_list[comment_offsets_index] += math.log(((mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
+                comment_offsets_index += 1
+                    
+        return score_list
 
     # load comment from given offset into comment file
     def load_comment(self, offset):
@@ -415,8 +423,9 @@ class SearchEngine():
             print str(len(comment_offsets)) + " comments matched the query, calculating scores..."
             t_begin_ranking = time.clock()
             top_k_rated_comments = [] # min heap of tuples (score, comment_offset)
-            for comment_offset in comment_offsets:
-                score = self.get_dirichlet_smoothed_score(query, comment_offset)
+            scores = self.get_dirichlet_smoothed_score(query, comment_offsets)
+            for i, comment_offset in enumerate(comment_offsets):
+                score = scores[i]
                 if len(top_k_rated_comments) < top_k:
                     heapq.heappush(top_k_rated_comments, (score, comment_offset))
                 else:
