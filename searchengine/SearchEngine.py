@@ -178,14 +178,12 @@ class SearchEngine():
                 if comment_offsets_index >= len(comment_offsets):
                     break
                 occurences = comment_list.split(',')
-                while int(occurences[0]) > comment_offsets[comment_offsets_index]:
+                while comment_offsets_index < len(comment_offsets) and int(occurences[0]) > comment_offsets[comment_offsets_index]:
                     #term not found -> 0 occurences in comment
                     score_list[comment_offsets_index] += math.log(((mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                     comment_offsets_index += 1
-                    if comment_offsets_index >= len(comment_offsets):
-                        break
-                    
-                if int(occurences[0]) == comment_offsets[comment_offsets_index]:
+
+                if comment_offsets_index < len(comment_offsets) and int(occurences[0]) == comment_offsets[comment_offsets_index]:
                     fD_query_term = len(occurences) - 1
                     score_list[comment_offsets_index] += math.log((fD_query_term + (mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                     comment_offsets_index += 1
@@ -193,7 +191,7 @@ class SearchEngine():
                 #no matches found
                 score_list[comment_offsets_index] += math.log(((mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                 comment_offsets_index += 1
-                    
+
         return score_list
 
     # load comment from given offset into comment file
@@ -398,7 +396,7 @@ class SearchEngine():
         return results
 
     def is_boolean_query(self, query):
-        return "\'" in query or " AND " in query or " OR " in query or " NOT " in query or "*" in query
+        return " AND " in query or " OR " in query or " NOT " in query or "*" in query
 
 
     def search(self, query, top_k = 10):
@@ -413,6 +411,7 @@ class SearchEngine():
                 print example_comment.text
             print
         else:
+            # TODO: ranked phrase queries
             or_query = " OR ".join(query.split(" "))
             t_begin_searching = time.clock()
             comment_offsets = self.get_comment_offsets_for_query(or_query)
@@ -431,7 +430,7 @@ class SearchEngine():
                 else:
                     heapq.heappushpop(top_k_rated_comments, (score, comment_offset))
             t_elapsed = time.clock() - t_begin_ranking
-            print str(t_elapsed) + " seconds for ranking, " + str(t_elapsed/len(comment_offsets)) + " per comment\n\n"
+            print str(t_elapsed) + " seconds for scoring, " + str(t_elapsed/len(comment_offsets)) + " per comment\n\n"
             top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
             for score, comment_offset in top_k_rated_comments:
                 print "score: " + str(score) + ", text:"
@@ -443,8 +442,8 @@ data_folder = "data/real"
 search_engine = SearchEngine()
 # search_engine.index(data_folder)
 search_engine.loadIndex(data_folder)
-query = "tragic west"
-#for query in queries:
-search_engine.search(query)
-
-# print search_engine.get_dirichlet_smoothed_score(["Tragic"], 0)
+# query = "tragic west"
+queries = ["christmas market", "catalonia independence", "european union", "negotiate"]
+for query in queries:
+    search_engine.search(query, 5)
+    print "\n\n\n"
