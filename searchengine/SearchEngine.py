@@ -298,7 +298,9 @@ class SearchEngine():
 
     # returns offsets into comment file for all comments matching the query in ascending order
     def get_comment_offsets_for_query(self, query):
-        if "\'" in query:
+        if "'" in query:
+            # can only search for whole query as one phrase
+            assert(query[0] == "'" and query[-1] == "'")
             return self.get_comment_offsets_for_phrase_query(query)
 
         if " NOT " in query:
@@ -401,6 +403,7 @@ class SearchEngine():
 
     def search(self, query, top_k = 10):
         print "--------------------------------------------------searching for \"" + query + "\":"
+
         if self.is_boolean_query(query):
             comment_offsets = self.get_comment_offsets_for_query(query)
             print str(len(comment_offsets)) + " comments matched the query"
@@ -410,31 +413,36 @@ class SearchEngine():
                 example_comment = self.load_comment(comment_offsets[random_index])
                 print example_comment.text
             print
-        else:
-            # TODO: ranked phrase queries
-            or_query = " OR ".join(query.split(" "))
-            t_begin_searching = time.clock()
-            comment_offsets = self.get_comment_offsets_for_query(or_query)
-            print str(time.clock() - t_begin_searching) + " seconds for searching"
-            if len(comment_offsets) == 0:
-                print "no comments matched the query"
-                return
-            print str(len(comment_offsets)) + " comments matched the query, calculating scores..."
-            t_begin_ranking = time.clock()
-            top_k_rated_comments = [] # min heap of tuples (score, comment_offset)
-            scores = self.get_dirichlet_smoothed_score(query, comment_offsets)
-            for i, comment_offset in enumerate(comment_offsets):
-                score = scores[i]
-                if len(top_k_rated_comments) < top_k:
-                    heapq.heappush(top_k_rated_comments, (score, comment_offset))
-                else:
-                    heapq.heappushpop(top_k_rated_comments, (score, comment_offset))
-            t_elapsed = time.clock() - t_begin_ranking
-            print str(t_elapsed) + " seconds for scoring, " + str(t_elapsed/len(comment_offsets)) + " per comment\n\n"
-            top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
-            for score, comment_offset in top_k_rated_comments:
-                print "score: " + str(score) + ", text:"
-                print self.load_comment(comment_offset).text + "\n"
+            return
+
+        if not "'" in query:
+            query = " OR ".join(query.split(" "))
+        t_begin_searching = time.clock()
+        comment_offsets = self.get_comment_offsets_for_query(query)
+        print str(time.clock() - t_begin_searching) + " seconds for searching"
+        if len(comment_offsets) == 0:
+            print "no comments matched the query"
+            return
+        print str(len(comment_offsets)) + " comments matched the query"
+
+        print "calculating scores..."
+        t_begin_ranking = time.clock()
+        top_k_rated_comments = [] # min heap of tuples (score, comment_offset)
+        scores = self.get_dirichlet_smoothed_score(query, comment_offsets)
+        for i, comment_offset in enumerate(comment_offsets):
+            score = scores[i]
+            if len(top_k_rated_comments) < top_k:
+                heapq.heappush(top_k_rated_comments, (score, comment_offset))
+            else:
+                heapq.heappushpop(top_k_rated_comments, (score, comment_offset))
+        t_elapsed = time.clock() - t_begin_ranking
+        print str(t_elapsed) + " seconds for scoring, " + str(t_elapsed/len(comment_offsets)) + " per comment\n\n"
+
+        print "results:"
+        top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
+        for score, comment_offset in top_k_rated_comments:
+            print "score: " + str(score) + ", text:"
+            print self.load_comment(comment_offset).text + "\n"
 
 
 
@@ -443,7 +451,7 @@ search_engine = SearchEngine()
 # search_engine.index(data_folder)
 search_engine.loadIndex(data_folder)
 # query = "tragic west"
-queries = ["christmas market", "catalonia independence", "european union", "negotiate"]
+queries = ["'european union'"]
 for query in queries:
     search_engine.search(query, 5)
     print "\n\n\n"
