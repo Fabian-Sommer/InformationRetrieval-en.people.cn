@@ -220,7 +220,7 @@ class SearchEngine():
                     for csv_result in cs:
                         term = csv_result[0]
                         break
-                    compressed_seek_list[term] = offset
+                    compressed_seek_list[term] = [offset, 1 + len(byte_list)]
                     offset += 1 + len(byte_list)
                     orig_line = inf.readline().rstrip('\n')
         print(str(offset))
