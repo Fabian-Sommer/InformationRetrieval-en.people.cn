@@ -42,7 +42,7 @@ class CSVInputFile(object):
             raise StopIteration
         self.offset = offset
         self.linelen = len(data)
-        return data
+        return data.decode()
 
     next = __next__
 
@@ -56,12 +56,11 @@ class SearchEngine():
         self.comment_term_count_dict = None
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
-        # self.stemmer = nltk.stem.PorterStemmer()
 
     def index(self, directory):
         #read csv
         comment_list = []
-        with open(directory+"/comments.csv", 'rb') as f:
+        with open(f'{directory}/comments.csv', mode='rb') as f:
             csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
             last_offset = 0
             for row in csv_reader:
@@ -78,19 +77,19 @@ class SearchEngine():
                 last_offset = f.tell()
                 comment_list.append(comment)
 
-        print("Parsed csv into " + str(len(comment_list)) + " comments.")
+        print(f'Parsed csv into {len(comment_list)} comments.')
 
         #process comments (tokenize, remove stopwords, stem tokens)
         comments_processed = 0
         # phrase queries need stopwords...
-        # stops = set(stopwords.words("english") + list(string.punctuation))
+        # stops = set(stopwords.words('english') + list(string.punctuation))
         for comment in comment_list:
-            raw_tokens = nltk.word_tokenize(unicode(comment.text.lower(), 'utf-8'))
+            raw_tokens = nltk.word_tokenize(comment.text.lower())
             comment.term_list = self.stemmer.stemWords(raw_tokens)
             comments_processed += 1
             if comments_processed % 1000 == 0:
-                print(str(comments_processed) + "/" + str(len(comment_list)) + " comments processed")
-        print(str(comments_processed) + "/" + str(len(comment_list)) + " comments processed - done")
+                print(f'{comments_processed}/{len(comment_list)} comments processed')
+        print(f'{comments_processed}/{len(comment_list)} comments processed - done')
 
         #create index
         all_comment_dict = {}
@@ -107,7 +106,7 @@ class SearchEngine():
                     comment_dict[stem] = []
                 comment_dict[stem].append(position)
                 position += 1
-            for stem, positions in comment_dict.iteritems():
+            for stem, positions in comment_dict.items():
                 if not stem in all_comment_dict:
                     all_comment_dict[stem] = []
                     term_count_dict[stem] = 0
@@ -119,11 +118,10 @@ class SearchEngine():
         #save index as csv
         offset_dict = {}
         current_offset = 0
-        with open(directory+"/index.csv", 'wb') as f:
-            for stem, posting_list in sorted_all_comment_dict.iteritems():
-                line_string = ''
-                line_string += '"' + stem.replace('"', '""').encode('utf-8') + '"'
-                line_string += ':' + str(term_count_dict[stem])
+        with open(f'{directory}/index.csv', mode='wb') as f:
+            for stem, posting_list in sorted_all_comment_dict.items():
+                escaped_stem = stem.replace('"', '""')
+                line_string = f'"{escaped_stem}":{term_count_dict[stem]}'
                 sorted_posting_list = [x for x in sorted(posting_list)]
                 for posting_list_part in sorted_posting_list:
                     line_string += ':'
@@ -132,7 +130,7 @@ class SearchEngine():
                         line_string += ','
                         line_string += str(position)
                 line_string += '\n'
-                f.write(line_string)
+                f.write(line_string.encode())
                 offset_dict[stem] = current_offset
                 current_offset += len(line_string)
 
@@ -140,25 +138,25 @@ class SearchEngine():
         seek_list = [(k, offset_dict[k]) for k in sorted(offset_dict)]
 
         #pickle out offset_dict
-        with open(directory+"/seek_list.pickle", 'wb') as f:
+        with open(f'{directory}/seek_list.pickle', mode='wb') as f:
             pickle.dump(seek_list, f, pickle.HIGHEST_PROTOCOL)
 
-        with open(directory+"/comment_term_count_dict.pickle", 'wb') as f:
+        with open(f'{directory}/comment_term_count_dict.pickle', mode='wb') as f:
             pickle.dump(comment_term_count_dict, f, pickle.HIGHEST_PROTOCOL)
 
-        with open(directory+"/collection_term_count.pickle", 'wb') as f:
+        with open(f'{directory}/collection_term_count.pickle', mode='wb') as f:
             pickle.dump(collection_term_count, f, pickle.HIGHEST_PROTOCOL)
 
     def get_next_character(self, f):
         """Reads one character from the given textfile"""
         c = f.read(1)
-        while c: 
+        while c:
             yield c
             c = f.read(1)
 
     def encode(self, symb2freq):
         """Huffman encode the given dict mapping symbols to weights"""
-        heap = [[wt, [sym, ""]] for sym, wt in symb2freq.items()]
+        heap = [[wt, [sym, '']] for sym, wt in symb2freq.items()]
         heapq.heapify(heap)
         while len(heap) > 1:
             lo = heapq.heappop(heap)
@@ -175,18 +173,18 @@ class SearchEngine():
         #count all occuring UTF-8 characters
         character_count = {}
         i = 0
-        with open(directory+"/index.csv", encoding='utf-8') as f:
+        with open(f'{directory}/index.csv', mode='r', encoding='utf-8') as f:
             for c in self.get_next_character(f):
                 i += 1
                 if i%1000000 == 0:
-                    print(str(int(i/1000000)) + " MB counted")
+                    print(f'{int(i/1000000)} MB counted')
                 if c != '\n':
                     if not c in character_count:
                         character_count[c] = 1
                     else:
                         character_count[c] += 1
         symbol_encoding_pairs = self.encode(character_count)
-        with open(directory+"/symbol_encoding_pairs.pickle", 'wb') as f:
+        with open(f'{directory}/symbol_encoding_pairs.pickle', mode='wb') as f:
             pickle.dump(symbol_encoding_pairs, f, pickle.HIGHEST_PROTOCOL)
         symbol_encoding = {}
         for pair in symbol_encoding_pairs:
@@ -194,14 +192,14 @@ class SearchEngine():
 
         compressed_seek_list = {}
         offset = 0
-        with open(directory+"/index.csv", encoding='utf-8') as inf:
-            with open(directory+"/compressed_index.csv", 'wb') as of:
+        with open(f'{directory}/index.csv', mode='r', encoding='utf-8') as inf:
+            with open(f'{directory}/compressed_index.csv', mode='wb') as of:
                 orig_line = inf.readline().rstrip('\n')
                 i = 0
                 while orig_line:
                     i += 1
                     print(i)
-                    new_line = ""
+                    new_line = ''
                     for c in orig_line:
                         new_line += symbol_encoding[c]
                     padding = (8 - (len(new_line) % 8)) % 8
@@ -224,34 +222,26 @@ class SearchEngine():
                     offset += 1 + len(byte_list)
                     orig_line = inf.readline().rstrip('\n')
         print(str(offset))
-        with open(directory+"/compressed_seek_list.pickle", 'wb') as f:
+        with open(f'{directory}/compressed_seek_list.pickle', mode='wb') as f:
             pickle.dump(compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
 
-        
+
 
 
 
     def loadCompressedIndex(self, directory):
         #TODO
-        with open(directory+"/seek_list.pickle", 'rb') as f:
-            self.seek_list = pickle.load(f)
-        with open(directory+"/comment_term_count_dict.pickle", 'rb') as f:
-            self.comment_term_count_dict = pickle.load(f)
-        with open(directory+"/collection_term_count.pickle", 'rb') as f:
-            self.collection_term_count = pickle.load(f)
-        self.comment_file = open(directory+"/comments.csv", 'rb')
-        self.index_file = open(directory+"/index.csv", 'rb')
-        self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file), quoting=csv.QUOTE_ALL)
+        print('unimplemented loadCompressedIndex was called')
 
     def loadIndex(self, directory):
-        with open(directory+"/seek_list.pickle", 'rb') as f:
+        with open(f'{directory}/seek_list.pickle', mode='rb') as f:
             self.seek_list = pickle.load(f)
-        with open(directory+"/comment_term_count_dict.pickle", 'rb') as f:
+        with open(f'{directory}/comment_term_count_dict.pickle', mode='rb') as f:
             self.comment_term_count_dict = pickle.load(f)
-        with open(directory+"/collection_term_count.pickle", 'rb') as f:
+        with open(f'{directory}/collection_term_count.pickle', mode='rb') as f:
             self.collection_term_count = pickle.load(f)
-        self.comment_file = open(directory+"/comments.csv", 'rb')
-        self.index_file = open(directory+"/index.csv", 'rb')
+        self.comment_file = open(f'{directory}/comments.csv', mode='rb')
+        self.index_file = open(f'{directory}/index.csv', mode='r', encoding='utf-8')
         self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file), quoting=csv.QUOTE_ALL)
 
     # returns score for ranking based on natural language model with dirichlet smoothing
@@ -265,7 +255,7 @@ class SearchEngine():
                 next
             self.index_file.seek(self.seek_list[i][1])
             posting_list = self.index_file.readline().rstrip('\n')
-            posting_list_parts = posting_list.split(":")
+            posting_list_parts = posting_list.split(':')
             c_query_term = int(posting_list_parts[1])
             comment_offsets_index = 0
             for comment_list in posting_list_parts[2:]:
@@ -363,8 +353,8 @@ class SearchEngine():
             return []
         self.index_file.seek(self.seek_list[i][1])
         posting_list = self.index_file.readline().rstrip('\n')
-        posting_list_parts = posting_list.split(":")
-        return [int(x.split(",")[0]) for x in posting_list_parts[2:]]
+        posting_list_parts = posting_list.split(':')
+        return [int(x.split(',')[0]) for x in posting_list_parts[2:]]
 
     # returns offsets into comment file for all comments containing stem in ascending order,
     # where either prefix starts with stem (false positive possible) or stem starts with prefix
@@ -374,8 +364,8 @@ class SearchEngine():
         for i in index_range:
             self.index_file.seek(self.seek_list[i][1])
             posting_list = self.index_file.readline().rstrip('\n')
-            posting_list_parts = posting_list.split(":")
-            offsets = [int(x.split(",")[0]) for x in posting_list_parts[2:]]
+            posting_list_parts = posting_list.split(':')
+            offsets = [int(x.split(',')[0]) for x in posting_list_parts[2:]]
             for offset in offsets:
                 offsets_for_prefix.add(offset)
         return offsets_for_prefix
@@ -383,10 +373,10 @@ class SearchEngine():
     def get_comment_offsets_for_phrase_query(self, query):
         match = re.search(r'\'[^"]*\'', query)
         if not match:
-            print("invalid phrase query")
+            print('invalid phrase query')
             exit()
         phrase = match.group()[1:-1]
-        new_query = " AND ".join(phrase.split(" "))
+        new_query = ' AND '.join(phrase.split(' '))
         possible_matches = self.get_comment_offsets_for_query(new_query)
         return [x for x in possible_matches if phrase in self.load_comment(x).text.lower()]
 
@@ -397,19 +387,19 @@ class SearchEngine():
             assert(query[0] == "'" and query[-1] == "'")
             return self.get_comment_offsets_for_phrase_query(query)
 
-        if " NOT " in query:
-            split_query = query.split(" NOT ", 1)
+        if ' NOT ' in query:
+            split_query = query.split(' NOT ', 1)
             return self.search_boolean_NOT(split_query[0], split_query[1])
-        if " AND " in query:
-            split_query = query.split(" AND ", 1)
+        if ' AND ' in query:
+            split_query = query.split(' AND ', 1)
             return self.search_boolean_AND(split_query[0], split_query[1])
-        if " OR " in query:
-            split_query = query.split(" OR ", 1)
+        if ' OR ' in query:
+            split_query = query.split(' OR ', 1)
             return self.search_boolean_OR(split_query[0], split_query[1])
 
         #assume we are left with single term at this point
-        assert(" " not in query)
-        prefix = query[:-1].lower() if query[-1] == "*" else None
+        assert(' ' not in query)
+        prefix = query[:-1].lower() if query[-1] == '*' else None
 
         if(prefix == None):
             return self.get_offsets_for_stem(self.stemmer.stemWord(query.lower()))
@@ -419,7 +409,7 @@ class SearchEngine():
             result = []
             for offset in offsets_for_prefix:
                 comment = self.load_comment(offset)
-                raw_tokens = nltk.word_tokenize(unicode(comment.text.lower(), 'utf-8'))
+                raw_tokens = nltk.word_tokenize(str(comment.text.lower(), encoding='utf-8'))
                 for token in raw_tokens:
                     if token.startswith(prefix):
                         result.append(offset)
@@ -492,38 +482,46 @@ class SearchEngine():
         return results
 
     def is_boolean_query(self, query):
-        return " AND " in query or " OR " in query or " NOT " in query or "*" in query
+        return ' AND ' in query or ' OR ' in query or ' NOT ' in query or '*' in query
 
 
     def search(self, query, top_k = 10):
 
-        print("--------------------------------------------------searching for \"" + query + "\":")
+        print(f'--------------------------------------------------searching for "{query}":')
 
         if self.is_boolean_query(query):
             comment_offsets = self.get_comment_offsets_for_query(query)
-            print(str(len(comment_offsets)) + " comments matched the query")
+            print(f'{len(comment_offsets)} comments matched the query')
             if len(comment_offsets) > 0:
-                print("example:")
+                print('example comment:')
                 random_index = random.randrange(0, len(comment_offsets))
                 example_comment = self.load_comment(comment_offsets[random_index])
                 print(example_comment.text)
             print()
             return
 
+
         if not "'" in query:
-            query = " OR ".join(query.split(" "))
+            query = ' OR '.join(query.split(' '))
+            query_terms = query.split(' ')
+        else:
+            assert(query[0] == "'" and query[-1] == "'")
+            query_terms = [query]
+
         t_begin_searching = time.clock()
         comment_offsets = self.get_comment_offsets_for_query(query)
-        print(str(time.clock() - t_begin_searching) + " seconds for searching")
-        if len(comment_offsets) == 0:
-            print("no comments matched the query")
-            return
-        print(str(len(comment_offsets)) + " comments matched the query")
+        print(f'{time.clock() - t_begin_searching} seconds for searching')
 
-        print("calculating scores...")
+        if len(comment_offsets) == 0:
+            print('no comments matched the query')
+            return
+        print(f'{len(comment_offsets)} comments matched the query')
+
+        print('calculating scores...')
         t_begin_ranking = time.clock()
         top_k_rated_comments = [] # min heap of tuples (score, comment_offset)
-        scores = self.get_dirichlet_smoothed_score(query, comment_offsets)
+
+        scores = self.get_dirichlet_smoothed_score(query_terms, comment_offsets)
         for i, comment_offset in enumerate(comment_offsets):
             score = scores[i]
             if len(top_k_rated_comments) < top_k:
@@ -531,24 +529,25 @@ class SearchEngine():
             else:
                 heapq.heappushpop(top_k_rated_comments, (score, comment_offset))
         t_elapsed = time.clock() - t_begin_ranking
-        print(str(t_elapsed) + " seconds for scoring, " + str(t_elapsed/len(comment_offsets)) + " per comment\n\n")
+        print(f'{t_elapsed} seconds for scoring, {t_elapsed/len(comment_offsets)} per comment\n\n')
 
-        print("results:")
+        print('results:')
         top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
         for score, comment_offset in top_k_rated_comments:
-            print("score: " + str(score) + ", text:")
-            print(self.load_comment(comment_offset).text + "\n")
+            print(f'score: {score}, text:')
+            print(f'{self.load_comment(comment_offset).text}\n')
 
 
-data_folder = "data/real"
+data_folder = 'data/real'
 search_engine = SearchEngine()
 # search_engine.index(data_folder)
-search_engine.compressIndex(data_folder)
+# search_engine.compressIndex(data_folder)
 search_engine.loadIndex(data_folder)
+# search_engine.loadCompressedIndex(data_folder)
+# print('index loaded')
 
-# query = "tragic west"
-queries = ["'european union'"]
+# query = 'tragic west'
+queries = ["tragic"]
 for query in queries:
     search_engine.search(query, 5)
-    print("\n\n\n")
-
+    print('\n\n\n')
