@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import csv
 import nltk
 import Stemmer
@@ -130,9 +132,10 @@ class SearchEngine():
                         line_string += ','
                         line_string += str(position)
                 line_string += '\n'
-                f.write(line_string.encode())
+                line_raw = line_string.encode()
+                f.write(line_raw)
                 offset_dict[stem] = current_offset
-                current_offset += len(line_string)
+                current_offset += len(line_raw)
 
         #seek list should be a sorted list
         seek_list = [(k, offset_dict[k]) for k in sorted(offset_dict)]
