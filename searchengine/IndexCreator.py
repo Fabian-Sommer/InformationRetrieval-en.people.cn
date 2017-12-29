@@ -37,7 +37,7 @@ class IndexCreator():
 
     def create_index(self, compress_index=True):
         #read csv to create comment_list
-        report_time('parsing comments.csv')
+        report_begin('parsing comments.csv')
         self.comment_list = []
         with open(f'{self.directory}/comments.csv', mode='rb') as f:
             csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
@@ -48,10 +48,10 @@ class IndexCreator():
                 report_progress(len(self.comment_list), ' comments parsed', 10000)
                 previous_offset = f.tell()
         report(f'found {len(self.comment_list)} comments')
-        report_time('parsing comments.csv')
+        report_finish('parsing comments.csv')
 
         #process comments (tokenize and stem tokens)
-        report_time('processing comments')
+        report_begin('processing comments')
         stemmer = Stemmer.Stemmer('english')
         comments_processed = 0
         for comment in self.comment_list:
@@ -60,10 +60,10 @@ class IndexCreator():
             comments_processed += 1
             report_progress(comments_processed, f'/{len(self.comment_list)} comments processed')
         report(f'{comments_processed}/{len(self.comment_list)} comments processed')
-        report_time('processing comments')
+        report_finish('processing comments')
 
         #create index
-        report_time('creating index')
+        report_begin('creating index')
         all_comment_dict = {}
         term_count_dict = {}
         self.comment_term_count_dict = {}
@@ -85,10 +85,10 @@ class IndexCreator():
                     term_count_dict[stem] = 0
                 all_comment_dict[stem].append([comment.file_offset, positions])
                 term_count_dict[stem] += len(positions)
-        report_time('creating index')
+        report_finish('creating index')
 
         #save index as csv
-        report_time('saving files')
+        report_begin('saving files')
         sorted_all_comment_dict = OrderedDict(sorted(all_comment_dict.items(), key=lambda t:t[0]))
         offset_dict = {}
         current_offset = 0
@@ -121,46 +121,45 @@ class IndexCreator():
         with open(f'{self.directory}/collection_term_count.pickle', mode='wb') as f:
             pickle.dump(self.collection_term_count, f, pickle.HIGHEST_PROTOCOL)
 
-        report_time('saving files')
+        report_finish('saving files')
 
         if compress_index:
             self.huffman_compression()
 
-        report()
-        for action, duration in time_measures.items():
-            report(f'{action} took {duration} seconds')
+        report_all_time_measures()
 
     def huffman_compression(self):
         #compress using Huffman encoding
 
         #count all occuring UTF-8 characters
-        report_time('counting utf8 characters')
+        report_begin('counting utf8 characters')
         character_counts = {}
         with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
-            def get_next_character():
-                """Reads one character from the given textfile"""
-                c = index_file.read(1)
+            def get_next_characters():
+                """Reads 100000 character from the given textfile"""
+                c = index_file.read(100000)
                 while c:
                     yield c
-                    c = index_file.read(1)
+                    c = index_file.read(100000)
 
             i = 0
-            for c in get_next_character():
+            for characters in get_next_characters():
+                for c in characters:
+                    if c != '\n':
+                        if not c in character_counts:
+                            character_counts[c] = 1
+                        else:
+                            character_counts[c] += 1
                 i += 1
-                report_progress(i, ' characters counted', 1000000)
-                if c != '\n':
-                    if not c in character_counts:
-                        character_counts[c] = 1
-                    else:
-                        character_counts[c] += 1
-        report_time('counting utf8 characters')
+                report_progress(i, '00000 characters counted',report_interval = 10)
+        report_finish('counting utf8 characters')
 
         # derive huffman encoding from character counts
-        report_time('deriving huffman encoding')
+        report_begin('deriving huffman encoding')
         self.symbol_encoding_pairs = huffman_encode(character_counts)
-        report_time('deriving huffman encoding')
+        report_finish('deriving huffman encoding')
 
-        report_time('saving compressed files')
+        report_begin('saving compressed files')
         with open(f'{self.directory}/symbol_encoding_pairs.pickle', mode='wb') as f:
             pickle.dump(self.symbol_encoding_pairs, f, pickle.HIGHEST_PROTOCOL)
 
@@ -197,7 +196,7 @@ class IndexCreator():
 
         with open(f'{self.directory}/compressed_seek_list.pickle', mode='wb') as f:
             pickle.dump(self.compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
-        report_time('saving compressed files')
+        report_finish('saving compressed files')
 
 if __name__ == '__main__':
     data_directory = 'data/fake' if len(argv) < 2 else argv[1]
