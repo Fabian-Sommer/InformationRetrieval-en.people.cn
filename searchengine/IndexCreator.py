@@ -7,11 +7,16 @@ import pickle
 import heapq
 import io
 import os
+from sys import argv
 
 from Common import *
 
+def report(message):
+    if __name__ == '__main__':
+        print(message)
+
 def report_progress(progress, message):
-    if progress % 1000 == 0:
+    if __name__ == '__main__' and progress % 1000 == 0:
         print(f'{progress}{message}')
 
 # used for index compression
@@ -34,27 +39,18 @@ class IndexCreator():
         self.directory = directory
         assert(os.path.isfile(f'{self.directory}/comments.csv'))
 
-    def create_comment_list(self):
-        #read csv
+    def create_index(self, compress_index=True):
+        #read csv to create comment_list
         self.comment_list = []
         with open(f'{self.directory}/comments.csv', mode='rb') as f:
             csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
             previous_offset = f.tell()
-            for row in csv_reader:
-                comment = Comment()
-                comment.cid = int(row[0])
-                comment.url = row[1]
-                comment.author = row[2]
-                comment.time = row[3]
-                comment.parent = None if row[4] == 'None' else int(row[4])
-                comment.likes = int(row[5])
-                comment.dislikes = int(row[6])
-                comment.text = row[7]
-                comment.file_offset = previous_offset
+            for csv_line in csv_reader:
+                comment = Comment().init_from_csv_line(csv_line, previous_offset)
                 self.comment_list.append(comment)
                 report_progress(len(self.comment_list), ' comments parsed')
                 previous_offset = f.tell()
-        print(f'parsed csv into {len(self.comment_list)} comments.')
+        report(f'parsed csv into {len(self.comment_list)} comments.')
 
         #process comments (tokenize and stem tokens)
         stemmer = Stemmer.Stemmer('english')
@@ -64,10 +60,7 @@ class IndexCreator():
             comment.term_list = stemmer.stemWords(raw_tokens)
             comments_processed += 1
             report_progress(comments_processed, f'/{len(self.comment_list)} comments processed')
-        print(f'{comments_processed}/{len(self.comment_list)} comments processed - done')
-
-    def create_index(self, compress_index=True):
-        self.create_comment_list()
+        report(f'{comments_processed}/{len(self.comment_list)} comments processed - done')
 
         #create index
         all_comment_dict = {}
@@ -126,9 +119,9 @@ class IndexCreator():
             pickle.dump(self.collection_term_count, f, pickle.HIGHEST_PROTOCOL)
 
         if compress_index:
-            print('starting compression...')
+            report('starting compression...')
             self.huffman_compression()
-        print('index creation done')
+        report('index creation done')
 
     def huffman_compression(self):
         #compress using Huffman encoding
@@ -172,7 +165,7 @@ class IndexCreator():
                     for c in orig_line:
                         new_line += symbol_encoding[c]
                     padding = (8 - (len(new_line) % 8)) % 8
-                    assert(0 <= padding and padding < 8)
+                    assert(0 <= padding < 8)
                     new_line += padding * '0'
                     assert(len(new_line) % 8 == 0)
                     # first split into 8-bit chunks
@@ -194,4 +187,6 @@ class IndexCreator():
             pickle.dump(compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
-    IndexCreator('data/fake').create_index()
+    data_directory = 'data/fake' if len(argv) < 2 else argv[1]
+    index_creator = IndexCreator(data_directory)
+    index_creator.create_index()
