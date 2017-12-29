@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import unittest
+import filecmp
 
 from IndexCreator import *
 
@@ -16,7 +17,7 @@ class TestIndexCreation(unittest.TestCase):
             'index.csv',
             'collection_term_count.pickle',
             'comment_term_count_dict.pickle',
-            'compressed_index.csv',
+            'compressed_index',
             'compressed_seek_list.pickle',
             'seek_list.pickle',
             'symbol_encoding_pairs.pickle'
@@ -26,31 +27,53 @@ class TestIndexCreation(unittest.TestCase):
 
 
     def test_index_file(self):
+        self.assertTrue(os.path.isfile(f'{self.test_directory}/expected_index.csv'),
+            f'could not find expected_index.csv in {self.test_directory}')
         expected_comment_list = [
-            Comment(1767167970, 'http://en.people.cn/n/2015/0101/c90785-8830442.html', 'klive', '2015-01-01T14:34:08', None, 0, 0, 'Tragic event', 0, ['tragic', 'event']),
-            Comment(1766936418, 'http://en.people.cn/n/2015/0101/c90785-8830442.html', 'Wang Wei', '2015-01-01T06:24:06', None, 0, 0, 'Xi > TrumP', 127, ['xi', '>', 'trump']),
-            Comment(1766866409, 'http://en.people.cn/n/2015/0101/c90785-8830442.html', 'enpeople', '2015-01-01T04:18:20', None, 0, 0, 'some special §¸…· characters', 255, ['some', 'special', '§¸…·', 'charact'])
+            Comment(1767167970, 'http://en.people.cn/n/2015/0101/c90785-8830442.html',
+                'klive', '2015-01-01T14:34:08', None, 0, 0, 'Tragic event',
+                0, ['tragic', 'event']),
+            Comment(1766936418, 'http://en.people.cn/n/2015/0101/c90785-8830442.html',
+                'Wang Wei', '2015-01-01T06:24:06', None, 0, 0, 'Xi > TrumP',
+                127, ['xi', '>', 'trump']),
+            Comment(1766866409, 'http://en.people.cn/n/2015/0101/c90785-8830442.html',
+                'enpeople', '2015-01-01T04:18:20', None, 0, 0, 'some special §¸…· characters',
+                255, ['some', 'special', '§¸…·', 'charact'])
         ]
-        self.assertEqual(self.index_creator.comment_list, expected_comment_list, "unexpected comment list")
-        self.assertTrue(os.path.isfile(f'{self.test_directory}/index.csv'), 'index file was not created')
-        expected_index = r'''">":1:127,1
-"charact":1:255,3
-"event":1:0,1
-"some":1:255,0
-"special":1:255,1
-"tragic":1:0,0
-"trump":1:127,2
-"xi":1:127,0
-"§¸…·":1:255,2
-'''
-        with open(f'{self.test_directory}/index.csv', mode='r', encoding='utf-8') as index_file:
-            self.assertMultiLineEqual(index_file.read(), expected_index, 'unexpected index content')
+        self.assertEqual(self.index_creator.comment_list, expected_comment_list)
+        self.assertTrue(os.path.isfile(f'{self.test_directory}/index.csv'),
+            'index.csv was not created')
+        self.assertTrue(filecmp.cmp(f'{self.test_directory}/index.csv',
+            f'{self.test_directory}/expected_index.csv'),
+            'expected and created index.csv are different')
 
     def test_seek_list(self):
         expected_seek_list = [('>', 0), ('charact', 12), ('event', 30), ('some', 44),
             ('special', 59), ('tragic', 77), ('trump', 92), ('xi', 108), ('§¸…·', 121)]
-        self.assertEqual(self.index_creator.seek_list, expected_seek_list, 'unexpected seek list')
+        self.assertEqual(self.index_creator.seek_list, expected_seek_list)
 
+    def test_term_counts(self):
+        expected_comment_term_count_dict = {0: 2, 127: 3, 255: 4}
+        self.assertDictEqual(self.index_creator.comment_term_count_dict,
+            expected_comment_term_count_dict)
+        self.assertEqual(self.index_creator.collection_term_count, 9)
+
+    def test_compressed_seek_list(self):
+        self.index_creator.huffman_compression()
+        expected_compressed_seek_list = {'>': [0, 7], 'charact': [7, 11], 'event': [18, 8],
+            'some': [26, 9], 'special': [35, 11], 'tragic': [46, 9], 'trump': [55, 9],
+            'xi': [64, 7], '§¸…·': [71, 9]}
+        self.assertDictEqual(self.index_creator.compressed_seek_list, expected_compressed_seek_list)
+
+    def test_compressed_index_file(self):
+        self.assertTrue(os.path.isfile(f'{self.test_directory}/expected_compressed_index'),
+            f'could not find expected_compressed_index file in {self.test_directory}')
+        self.index_creator.huffman_compression()
+        self.assertTrue(os.path.isfile(f'{self.test_directory}/compressed_index'),
+            'compressed index file was not created')
+        self.assertTrue(filecmp.cmp(f'{self.test_directory}/compressed_index',
+            f'{self.test_directory}/expected_compressed_index'),
+            'expected and created compressed_index files are different')
 
 
 if __name__ == '__main__':
