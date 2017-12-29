@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 import Stemmer
-import nltk
+from nltk.tokenize import ToktokTokenizer, sent_tokenize
 from collections import OrderedDict
 import pickle
 import heapq
@@ -45,7 +45,7 @@ class IndexCreator():
             for csv_line in csv_reader:
                 comment = Comment().init_from_csv_line(csv_line, previous_offset)
                 self.comment_list.append(comment)
-                report_progress(len(self.comment_list), ' comments parsed', 10000)
+                report_progress(len(self.comment_list), ' comments parsed')
                 previous_offset = f.tell()
         report(f'found {len(self.comment_list)} comments')
         report_finish('parsing comments.csv')
@@ -53,10 +53,14 @@ class IndexCreator():
         #process comments (tokenize and stem tokens)
         report_begin('processing comments')
         stemmer = Stemmer.Stemmer('english')
+        tokenizer = ToktokTokenizer()
         comments_processed = 0
         for comment in self.comment_list:
-            raw_tokens = nltk.word_tokenize(comment.text.lower())
-            comment.term_list = stemmer.stemWords(raw_tokens)
+            comment_text_lower = comment.text.lower()
+            comment.term_list = []
+            for sentence in sent_tokenize(comment_text_lower):
+                tokens = tokenizer.tokenize(sentence)
+                comment.term_list += stemmer.stemWords(tokens)
             comments_processed += 1
             report_progress(comments_processed, f'/{len(self.comment_list)} comments processed')
         report(f'{comments_processed}/{len(self.comment_list)} comments processed')

@@ -34,6 +34,6 @@ def report_all_time_measures():
     report((len(total_row) + 5) * '-')
     report(total_row)
 
-def report_progress(progress, message, report_interval = 1000):
+def report_progress(progress, message, report_interval = 10000):
     if progress % report_interval == 0:
         report(f'{progress}{message}')
