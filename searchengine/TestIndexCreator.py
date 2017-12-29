@@ -30,15 +30,13 @@ class TestIndexCreation(unittest.TestCase):
         self.assertTrue(os.path.isfile(f'{self.test_directory}/expected_index.csv'),
             f'could not find expected_index.csv in {self.test_directory}')
         expected_comment_list = [
-            Comment(1767167970, 'http://en.people.cn/n/2015/0101/c90785-8830442.html',
-                'klive', '2015-01-01T14:34:08', None, 0, 0, 'Tragic event',
-                0, ['tragic', 'event']),
-            Comment(1766936418, 'http://en.people.cn/n/2015/0101/c90785-8830442.html',
-                'Wang Wei', '2015-01-01T06:24:06', None, 0, 0, 'Xi > TrumP',
-                127, ['xi', '>', 'trump']),
-            Comment(1766866409, 'http://en.people.cn/n/2015/0101/c90785-8830442.html',
-                'enpeople', '2015-01-01T04:18:20', None, 0, 0, 'some special §¸…· characters',
-                255, ['some', 'special', '§¸…·', 'charact'])
+            Comment(1767167970, 'http://en.people.cn/n/2015/0101/c90785-8830442.html', 'klive',
+                '2015-01-01T14:34:08', None, 0, 0, 'Tragic event', 0, ['tragic', 'event']),
+            Comment(1766936418, 'http://en.people.cn/n/2015/0101/c90785-8830442.html', 'Wang Wei',
+                '2015-01-01T06:24:06', None, 0, 0, 'Xi > TrumP', 127, ['xi', '>', 'trump']),
+            Comment(1766866409, 'http://en.people.cn/n/2015/0101/c90785-8830442.html', 'enpeople',
+                '2015-01-01T04:18:20', None, 0, 0, 'some special §¸…· characters', 255,
+                ['some', 'special', '§¸', '…', '·', 'charact'])
         ]
         self.assertEqual(self.index_creator.comment_list, expected_comment_list)
         self.assertTrue(os.path.isfile(f'{self.test_directory}/index.csv'),
@@ -49,20 +47,22 @@ class TestIndexCreation(unittest.TestCase):
 
     def test_seek_list(self):
         expected_seek_list = [('>', 0), ('charact', 12), ('event', 30), ('some', 44),
-            ('special', 59), ('tragic', 77), ('trump', 92), ('xi', 108), ('§¸…·', 121)]
+            ('special', 59), ('tragic', 77), ('trump', 92), ('xi', 108), ('§¸', 121),
+            ('·', 136), ('…', 149)
+        ]
         self.assertEqual(self.index_creator.seek_list, expected_seek_list)
 
     def test_term_counts(self):
-        expected_comment_term_count_dict = {0: 2, 127: 3, 255: 4}
+        expected_comment_term_count_dict = {0: 2, 127: 3, 255: 6}
         self.assertDictEqual(self.index_creator.comment_term_count_dict,
             expected_comment_term_count_dict)
-        self.assertEqual(self.index_creator.collection_term_count, 9)
+        self.assertEqual(self.index_creator.collection_term_count, 11)
 
     def test_compressed_seek_list(self):
         self.index_creator.huffman_compression()
-        expected_compressed_seek_list = {'>': [0, 7], 'charact': [7, 11], 'event': [18, 8],
-            'some': [26, 9], 'special': [35, 11], 'tragic': [46, 9], 'trump': [55, 9],
-            'xi': [64, 7], '§¸…·': [71, 9]}
+        expected_compressed_seek_list = {'>': [0, 7], 'charact': [7, 10], 'event': [17, 8],
+            'some': [25, 9], 'special': [34, 10], 'tragic': [44, 9], 'trump': [53, 10],
+            'xi': [63, 8], '§¸': [71, 7], '·': [78, 7], '…': [85, 7]}
         self.assertDictEqual(self.index_creator.compressed_seek_list, expected_compressed_seek_list)
 
     def test_compressed_index_file(self):
