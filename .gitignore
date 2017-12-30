@@ -1,2 +1,4 @@
 *.pyc
-/searchengine/data/
+/searchengine/data/*
+!/searchengine/data/test/
+
