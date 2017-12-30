@@ -1,4 +1,5 @@
 *.pyc
 /searchengine/data/*
-!/searchengine/data/test/
+!/searchengine/data/test/expected_*
+!/searchengine/data/test/comments.csv
 

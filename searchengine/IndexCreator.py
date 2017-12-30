@@ -16,21 +16,6 @@ from Huffman import *
 if __name__ != '__main__':
     Report.set_quiet_mode(True)
 
-# used for index compression
-def huffman_encode(symbol_to_frequency_dict):
-    """Huffman encode the given dict mapping symbols to weights"""
-    heap = [ [frequency, [symbol, '']] for symbol, frequency in symbol_to_frequency_dict.items()]
-    heapq.heapify(heap)
-    while len(heap) > 1:
-        lo = heapq.heappop(heap)
-        hi = heapq.heappop(heap)
-        for symbol_encoding_pair in lo[1:]:
-            symbol_encoding_pair[1] = '0' + symbol_encoding_pair[1]
-        for symbol_encoding_pair in hi[1:]:
-            symbol_encoding_pair[1] = '1' + symbol_encoding_pair[1]
-        heapq.heappush(heap, [lo[0] + hi[0]] + lo[1:] + hi[1:])
-    return sorted(heap[0][1:], key=lambda symbol_encoding_pair: len(symbol_encoding_pair[1]))
-
 class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
@@ -138,48 +123,48 @@ class IndexCreator():
 
         #count all occuring UTF-8 characters
         Report.begin('counting utf8 characters')
-        character_counts = {}
+        symbol_to_frequency_dict = {}
         with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
-            def get_next_characters():
+            def get_next_chunk(chunk_size = 100000):
                 """Reads 100000 character from the given textfile"""
-                c = index_file.read(100000)
+                c = index_file.read(chunk_size)
                 while c:
                     yield c
-                    c = index_file.read(100000)
+                    c = index_file.read(chunk_size)
 
             i = 0
-            for characters in get_next_characters():
-                for c in characters:
-                    if c != '\n':
-                        if not c in character_counts:
-                            character_counts[c] = 1
+            for chunk in get_next_chunk():
+                for symbol in chunk:
+                    if symbol != '\n':
+                        if not symbol in symbol_to_frequency_dict:
+                            symbol_to_frequency_dict[symbol] = 1
                         else:
-                            character_counts[c] += 1
+                            symbol_to_frequency_dict[symbol] += 1
                 i += 1
                 Report.progress(i, '00000 characters counted', interval = 10)
         Report.finish('counting utf8 characters')
 
         # derive huffman encoding from character counts
         Report.begin('deriving huffman encoding')
-        self.symbol_encoding_pairs = huffman_encode(character_counts)
+        huffman_tree_root, symbol_to_encoding_dict = derive_huffman_encoding(symbol_to_frequency_dict)
         Report.finish('deriving huffman encoding')
 
         Report.begin('saving compressed files')
-        with open(f'{self.directory}/symbol_encoding_pairs.pickle', mode='wb') as f:
-            pickle.dump(self.symbol_encoding_pairs, f, pickle.HIGHEST_PROTOCOL)
+        # TODO save huffman tree
+        # with open(f'{self.directory}/symbol_encoding_pairs.pickle', mode='wb') as f:
+        #     pickle.dump(self.symbol_encoding_pairs, f, pickle.HIGHEST_PROTOCOL)
 
         self.compressed_seek_list = {}
         with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
             with open(f'{self.directory}/compressed_index', mode='wb') as compressed_index_file:
                 orig_line = index_file.readline().rstrip('\n')
                 i = 0
-                symbol_to_encoding_dict = dict(self.symbol_encoding_pairs)
                 offset = 0
                 while orig_line:
                     i += 1
                     new_line = ''
-                    for c in orig_line:
-                        new_line += symbol_to_encoding_dict[c]
+                    for symbol in orig_line:
+                        new_line += symbol_to_encoding_dict[symbol]
                     padding = (8 - (len(new_line) % 8)) % 8
                     assert(0 <= padding < 8)
                     new_line += padding * '0'
@@ -195,7 +180,7 @@ class IndexCreator():
                     for csv_result in cs:
                         term = csv_result[0]
                         break
-                    self.compressed_seek_list[term] = [offset, 1 + len(byte_list)]
+                    self.compressed_seek_list[term] = (offset, 1 + len(byte_list))
                     offset += 1 + len(byte_list)
                     orig_line = index_file.readline().rstrip('\n')
 
