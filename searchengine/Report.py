@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import time
 
 quiet_mode = False

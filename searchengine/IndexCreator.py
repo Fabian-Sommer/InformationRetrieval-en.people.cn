@@ -127,21 +127,22 @@ class IndexCreator():
         with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
             def get_next_chunk(chunk_size = 100000):
                 """Reads 100000 character from the given textfile"""
-                c = index_file.read(chunk_size)
-                while c:
-                    yield c
-                    c = index_file.read(chunk_size)
-
+                chunk = index_file.read(chunk_size)
+                while chunk:
+                    yield chunk
+                    chunk = index_file.read(chunk_size)
             i = 0
             for chunk in get_next_chunk():
                 for symbol in chunk:
-                    if symbol != '\n':
-                        if not symbol in symbol_to_frequency_dict:
-                            symbol_to_frequency_dict[symbol] = 1
-                        else:
-                            symbol_to_frequency_dict[symbol] += 1
-                i += 1
-                Report.progress(i, '00000 characters counted', interval = 10)
+                    if symbol == '\n':
+                        continue
+
+                    if not symbol in symbol_to_frequency_dict.keys():
+                        symbol_to_frequency_dict[symbol] = 1
+                    else:
+                        symbol_to_frequency_dict[symbol] += 1
+                    i += 1
+                    Report.progress(i, ' characters counted', 2500000)
         Report.finish('counting utf8 characters')
 
         # derive huffman encoding from character counts
@@ -150,38 +151,26 @@ class IndexCreator():
         Report.finish('deriving huffman encoding')
 
         Report.begin('saving compressed files')
-        # TODO save huffman tree
-        # with open(f'{self.directory}/symbol_encoding_pairs.pickle', mode='wb') as f:
-        #     pickle.dump(self.symbol_encoding_pairs, f, pickle.HIGHEST_PROTOCOL)
+        with open(f'{self.directory}/huffman_tree.pickle', mode='wb') as f:
+            pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
 
         self.compressed_seek_list = {}
         with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
             with open(f'{self.directory}/compressed_index', mode='wb') as compressed_index_file:
                 orig_line = index_file.readline().rstrip('\n')
-                i = 0
                 offset = 0
+                i = 0
                 while orig_line:
+                    encoded_line, padding = encode_huffman(orig_line, symbol_to_encoding_dict)
+                    compressed_index_file.write(encoded_line)
+
+                    term = next(csv.reader(io.StringIO(orig_line), delimiter=':'))[0]
+                    self.compressed_seek_list[term] = (offset, len(encoded_line), padding)
+
                     i += 1
-                    new_line = ''
-                    for symbol in orig_line:
-                        new_line += symbol_to_encoding_dict[symbol]
-                    padding = (8 - (len(new_line) % 8)) % 8
-                    assert(0 <= padding < 8)
-                    new_line += padding * '0'
-                    assert(len(new_line) % 8 == 0)
-                    # first split into 8-bit chunks
-                    bit_strings = [new_line[i:i + 8] for i in range(0, len(new_line), 8)]
-                    # then convert to integers
-                    byte_list = [int(b, 2) for b in bit_strings]
-                    compressed_index_file.write(str(padding).encode())
-                    compressed_index_file.write(bytearray(byte_list))
-                    cs = csv.reader(io.StringIO(orig_line), delimiter=':')
-                    term = ''
-                    for csv_result in cs:
-                        term = csv_result[0]
-                        break
-                    self.compressed_seek_list[term] = (offset, 1 + len(byte_list))
-                    offset += 1 + len(byte_list)
+                    Report.progress(i, ' index lines compressed')
+
+                    offset += len(encoded_line)
                     orig_line = index_file.readline().rstrip('\n')
 
         with open(f'{self.directory}/compressed_seek_list.pickle', mode='wb') as f:
@@ -192,3 +181,14 @@ if __name__ == '__main__':
     data_directory = 'data/fake' if len(argv) < 2 else argv[1]
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
+    # index_creator.huffman_compression()
+    # with open(f'{data_directory}/huffman_tree.pickle', mode='rb') as huffman_tree_file:
+    #     with open(f'{data_directory}/compressed_index', mode='rb') as compressed_index_file:
+    #         with open(f'{data_directory}/compressed_seek_list.pickle', mode='rb') as compressed_seek_list_file:
+    #             huffman_tree_root = pickle.load(huffman_tree_file)
+    #             compressed_seek_list = pickle.load(compressed_seek_list_file)
+    #             offset, length, padding = compressed_seek_list['trump']
+    #             compressed_index_file.seek(offset)
+    #             binary_data = compressed_index_file.read(length)
+    #             decoded_string = decode_huffman(binary_data, padding, huffman_tree_root)
+    #             print(decoded_string)

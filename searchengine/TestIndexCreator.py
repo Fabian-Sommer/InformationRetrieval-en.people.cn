@@ -20,7 +20,8 @@ class TestIndexCreation(unittest.TestCase):
             'compressed_index',
             'compressed_seek_list.pickle',
             'seek_list.pickle',
-            'symbol_encoding_pairs.pickle'
+            'symbol_encoding_pairs.pickle',
+            'huffman_tree.pickle'
         ]:
             if os.path.isfile(f'{self.test_directory}/{path}'):
                 os.remove(f'{self.test_directory}/{path}')
@@ -46,10 +47,9 @@ class TestIndexCreation(unittest.TestCase):
             'expected and created index.csv are different')
 
     def test_seek_list(self):
-        expected_seek_list = [('>', 0), ('charact', 12), ('event', 30), ('some', 44),
+        expected_seek_list = [ ('>', 0), ('charact', 12), ('event', 30), ('some', 44),
             ('special', 59), ('tragic', 77), ('trump', 92), ('xi', 108), ('§¸', 121),
-            ('·', 136), ('…', 149)
-        ]
+            ('·', 136), ('…', 149) ]
         self.assertEqual(self.index_creator.seek_list, expected_seek_list)
 
     def test_term_counts(self):
@@ -60,9 +60,9 @@ class TestIndexCreation(unittest.TestCase):
 
     def test_compressed_seek_list(self):
         self.index_creator.huffman_compression()
-        expected_compressed_seek_list = { '>': (0, 7), 'charact': (7, 10), 'event': (17, 9),
-            'some': (26, 9), 'special': (35, 10), 'tragic': (45, 9), 'trump': (54, 10),
-            'xi': (64, 8), '§¸': (72, 7), '·': (79, 7), '…': (86, 7) }
+        expected_compressed_seek_list = { '>': (0, 6, 7), 'charact': (6, 9, 2), 'event': (15, 8, 7),
+            'some': (23, 8, 6), 'special': (31, 9, 0), 'tragic': (40, 8, 1), 'trump': (48, 9, 7),
+            'xi': (57, 7, 7), '§¸': (64, 6, 1), '·': (70, 6, 5), '…': (76, 6, 4) }
         self.assertDictEqual(self.index_creator.compressed_seek_list, expected_compressed_seek_list)
 
     def test_compressed_index_file(self):
@@ -74,7 +74,6 @@ class TestIndexCreation(unittest.TestCase):
         self.assertTrue(filecmp.cmp(f'{self.test_directory}/compressed_index',
             f'{self.test_directory}/expected_compressed_index'),
             'expected and created compressed_index files are different')
-
 
 if __name__ == '__main__':
     unittest.main()
