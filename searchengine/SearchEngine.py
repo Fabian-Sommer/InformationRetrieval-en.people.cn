@@ -11,7 +11,7 @@ import time
 from sys import argv
 
 from Common import *
-from Huffman import decode_huffman
+import Huffman
 
 class SearchEngine():
 
@@ -50,7 +50,7 @@ class SearchEngine():
             offset, size = self.seek_list[stem]
             self.index_file.seek(offset)
             binary_data = self.index_file.read(size)
-            decoded_posting_list = decode_huffman(binary_data, self.huffman_tree_root)
+            decoded_posting_list = Huffman.decode(binary_data, self.huffman_tree_root)
             return [ stem ] + decoded_posting_list.split(':')
         else:
             self.index_file.seek(self.seek_list[stem])
