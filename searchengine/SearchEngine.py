@@ -10,6 +10,7 @@ import heapq
 import time
 
 from Common import *
+from Huffman import decode_huffman
 
 class SearchEngine():
 
@@ -22,31 +23,30 @@ class SearchEngine():
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
 
-    def loadCompressedIndex(self, directory):
-        #TODO
-        print('unimplemented loadCompressedIndex was called')
+    def loadIndex(self, directory, use_compressed = True):
+        if use_compressed:
+            with open(f'{directory}/compressed_seek_list.pickle', mode='rb') as f:
+                self.seek_list = pickle.load(f)
+            self.index_file = open(f'{directory}/compressed_index', mode='rb')
+        else:
+            with open(f'{directory}/seek_list.pickle', mode='rb') as f:
+                self.seek_list = pickle.load(f)
+            self.index_file = open(f'{directory}/index.csv', mode='r', encoding='utf-8')
 
-    def loadIndex(self, directory):
-        with open(f'{directory}/seek_list.pickle', mode='rb') as f:
-            self.seek_list = pickle.load(f)
         with open(f'{directory}/comment_term_count_dict.pickle', mode='rb') as f:
             self.comment_term_count_dict = pickle.load(f)
         with open(f'{directory}/collection_term_count.pickle', mode='rb') as f:
             self.collection_term_count = pickle.load(f)
         self.comment_file = open(f'{directory}/comments.csv', mode='rb')
-        self.index_file = open(f'{directory}/index.csv', mode='r', encoding='utf-8')
         self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file), quoting=csv.QUOTE_ALL)
 
     # returns score for ranking based on natural language model with dirichlet smoothing
     # query_terms: list of query terms, stemmed and filtered
     # comment_offsets: list of offsets of comments into comment file
     def get_dirichlet_smoothed_score(self, query_terms, comment_offsets, mu = 1500):
-        score_list = [0 for x in comment_offsets]
+        score_list = [ 0 for x in comment_offsets ]
         for query_term in query_terms:
-            i = self.get_index_in_seek_list(query_term)
-            if i == -1:
-                next
-            self.index_file.seek(self.seek_list[i][1])
+            self.index_file.seek(self.seek_list[query_term])
             posting_list = self.index_file.readline().rstrip('\n')
             posting_list_parts = posting_list.split(':')
             c_query_term = int(posting_list_parts[1])
@@ -89,21 +89,6 @@ class SearchEngine():
         comment.text = comment_as_list[7]
         return comment
 
-    # binary search in seek list for term as key
-    def get_index_in_seek_list(self, term):
-        lb = 0
-        rb = len(self.seek_list)
-        while lb < rb:
-            m = int(math.floor((lb + rb) / 2))
-            comp_term = self.seek_list[m][0]
-            if comp_term == term:
-                return m
-            elif comp_term < term:
-                lb = m + 1
-            else:
-                rb = m
-        return -1
-
     # return range of indices from first to last term which could start with prefix in seeklist
     def get_index_range_in_seek_list(self, prefix):
         # if stem starts with prefix the full word will as well
@@ -141,10 +126,7 @@ class SearchEngine():
 
     # returns offsets into comment file for all comments containing stem in ascending order
     def get_offsets_for_stem(self, stem):
-        i = self.get_index_in_seek_list(stem)
-        if i == -1:
-            return []
-        self.index_file.seek(self.seek_list[i][1])
+        self.index_file.seek(self.seek_list[stem])
         posting_list = self.index_file.readline().rstrip('\n')
         posting_list_parts = posting_list.split(':')
         return [int(x.split(',')[0]) for x in posting_list_parts[2:]]
@@ -330,13 +312,14 @@ class SearchEngine():
             print(f'score: {score}, text:')
             print(f'{self.load_comment(comment_offset).text}\n')
 
-data_folder = 'data/fake'
-search_engine = SearchEngine()
-search_engine.loadIndex(data_folder)
-# search_engine.loadCompressedIndex(data_folder)
-# print('index loaded')
+if __name__ == '__main__':
+    data_folder = 'data/fake'
+    search_engine = SearchEngine()
+    search_engine.loadIndex(data_folder, use_compressed = False)
+    # search_engine.loadCompressedIndex(data_folder)
+    # print('index loaded')
 
-queries = ["tragic"]
-for query in queries:
-    search_engine.search(query, 5)
-    print('\n\n\n')
+    queries = ["tragic"]
+    for query in queries:
+        search_engine.search(query, 5)
+        print('\n\n\n')

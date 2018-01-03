@@ -8,6 +8,7 @@ import heapq
 import io
 import os
 from sys import argv
+from prefixtree import PrefixDict # pip3 install git+https://github.com/provoke-vagueness/prefixtree
 
 import Report
 from Common import *
@@ -80,7 +81,7 @@ class IndexCreator():
         #save index as csv
         Report.begin('saving files')
         sorted_all_comment_dict = OrderedDict(sorted(all_comment_dict.items(), key=lambda t:t[0]))
-        offset_dict = {}
+        self.seek_list = PrefixDict()
         current_offset = 0
         with open(f'{self.directory}/index.csv', mode='wb') as f:
             for stem, posting_list in sorted_all_comment_dict.items():
@@ -96,9 +97,8 @@ class IndexCreator():
                 line_string += '\n'
                 line_raw = line_string.encode()
                 f.write(line_raw)
-                offset_dict[stem] = current_offset
+                self.seek_list[stem] = current_offset
                 current_offset += len(line_raw)
-        self.seek_list = [(k, offset_dict[k]) for k in sorted(offset_dict)]
 
 
         #pickle out seek_list (sorted offset_dict)
@@ -183,13 +183,13 @@ if __name__ == '__main__':
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
     # index_creator.huffman_compression()
-    with open(f'{data_directory}/huffman_tree.pickle', mode='rb') as huffman_tree_file:
-        with open(f'{data_directory}/compressed_index', mode='rb') as compressed_index_file:
-            with open(f'{data_directory}/compressed_seek_list.pickle', mode='rb') as compressed_seek_list_file:
-                huffman_tree_root = pickle.load(huffman_tree_file)
-                compressed_seek_list = pickle.load(compressed_seek_list_file)
-                offset, length = compressed_seek_list['trump']
-                compressed_index_file.seek(offset)
-                binary_data = compressed_index_file.read(length)
-                decoded_string = decode_huffman(binary_data, huffman_tree_root)
-                print(decoded_string)
+    # with open(f'{data_directory}/huffman_tree.pickle', mode='rb') as huffman_tree_file:
+    #     with open(f'{data_directory}/compressed_index', mode='rb') as compressed_index_file:
+    #         with open(f'{data_directory}/compressed_seek_list.pickle', mode='rb') as compressed_seek_list_file:
+    #             huffman_tree_root = pickle.load(huffman_tree_file)
+    #             compressed_seek_list = pickle.load(compressed_seek_list_file)
+    #             offset, length = compressed_seek_list['xi']
+    #             compressed_index_file.seek(offset)
+    #             binary_data = compressed_index_file.read(length)
+    #             decoded_string = decode_huffman(binary_data, huffman_tree_root)
+    #             print(decoded_string)

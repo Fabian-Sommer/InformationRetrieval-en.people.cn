@@ -47,9 +47,9 @@ class TestIndexCreation(unittest.TestCase):
             'expected and created index.csv are different')
 
     def test_seek_list(self):
-        expected_seek_list = [ ('>', 0), ('charact', 12), ('event', 30), ('some', 44),
+        expected_seek_list = PrefixDict([ ('>', 0), ('charact', 12), ('event', 30), ('some', 44),
             ('special', 59), ('tragic', 77), ('trump', 92), ('xi', 108), ('§¸', 121),
-            ('·', 136), ('…', 149) ]
+            ('·', 136), ('…', 149) ])
         self.assertEqual(self.index_creator.seek_list, expected_seek_list)
 
     def test_term_counts(self):
