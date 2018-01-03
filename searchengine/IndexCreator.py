@@ -7,7 +7,7 @@ import pickle
 import heapq
 import io
 import os
-from sys import argv
+from sys import argv, setrecursionlimit
 from prefixtree import PrefixDict # pip3 install git+https://github.com/provoke-vagueness/prefixtree
 
 import Report
@@ -21,6 +21,7 @@ class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
         assert(os.path.isfile(f'{self.directory}/comments.csv'))
+        setrecursionlimit(10000)
 
     def create_index(self, compress_index=True):
         #read csv to create comment_list

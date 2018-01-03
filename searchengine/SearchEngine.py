@@ -8,26 +8,31 @@ import random
 import re
 import heapq
 import time
+from sys import argv
 
 from Common import *
 from Huffman import decode_huffman
 
 class SearchEngine():
 
-    def __init__(self):
+    def __init__(self, using_compression = True):
         self.seek_list = []
         self.comment_file = None
         self.index_file = None
+        self.huffman_tree_root = None
         self.comment_csv_reader = None
         self.comment_term_count_dict = None
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
+        self.using_compression = using_compression
 
-    def loadIndex(self, directory, use_compressed = True):
-        if use_compressed:
+    def load_index(self, directory):
+        if self.using_compression:
             with open(f'{directory}/compressed_seek_list.pickle', mode='rb') as f:
                 self.seek_list = pickle.load(f)
             self.index_file = open(f'{directory}/compressed_index', mode='rb')
+            with open(f'{directory}/huffman_tree.pickle', mode='rb') as f:
+                self.huffman_tree_root = pickle.load(f)
         else:
             with open(f'{directory}/seek_list.pickle', mode='rb') as f:
                 self.seek_list = pickle.load(f)
@@ -40,16 +45,28 @@ class SearchEngine():
         self.comment_file = open(f'{directory}/comments.csv', mode='rb')
         self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file), quoting=csv.QUOTE_ALL)
 
+    def load_posting_list_parts(self, stem):
+        if self.using_compression:
+            offset, size = self.seek_list[stem]
+            self.index_file.seek(offset)
+            binary_data = self.index_file.read(size)
+            decoded_posting_list = decode_huffman(binary_data, self.huffman_tree_root)
+            return [ stem ] + decoded_posting_list.split(':')
+        else:
+            self.index_file.seek(self.seek_list[stem])
+            posting_list = self.index_file.readline().rstrip('\n')
+            return posting_list.split(':')
+
     # returns score for ranking based on natural language model with dirichlet smoothing
     # query_terms: list of query terms, stemmed and filtered
     # comment_offsets: list of offsets of comments into comment file
-    def get_dirichlet_smoothed_score(self, query_terms, comment_offsets, mu = 1500):
+    def get_dirichlet_smoothed_score(self, query_stems, comment_offsets, mu = 1500):
         score_list = [ 0 for x in comment_offsets ]
-        for query_term in query_terms:
-            self.index_file.seek(self.seek_list[query_term])
-            posting_list = self.index_file.readline().rstrip('\n')
-            posting_list_parts = posting_list.split(':')
-            c_query_term = int(posting_list_parts[1])
+        for query_stem in query_stems:
+            if not query_stem in self.seek_list:
+                continue
+            posting_list_parts = self.load_posting_list_parts(query_stem)
+            query_term_count = int(posting_list_parts[1])
             comment_offsets_index = 0
             for comment_list in posting_list_parts[2:]:
                 if comment_offsets_index >= len(comment_offsets):
@@ -57,16 +74,16 @@ class SearchEngine():
                 occurences = comment_list.split(',')
                 while comment_offsets_index < len(comment_offsets) and int(occurences[0]) > comment_offsets[comment_offsets_index]:
                     #term not found -> 0 occurences in comment
-                    score_list[comment_offsets_index] += math.log(((mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
+                    score_list[comment_offsets_index] += math.log(((mu * query_term_count / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                     comment_offsets_index += 1
 
                 if comment_offsets_index < len(comment_offsets) and int(occurences[0]) == comment_offsets[comment_offsets_index]:
                     fD_query_term = len(occurences) - 1
-                    score_list[comment_offsets_index] += math.log((fD_query_term + (mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
+                    score_list[comment_offsets_index] += math.log((fD_query_term + (mu * query_term_count / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                     comment_offsets_index += 1
             while comment_offsets_index < len(comment_offsets):
                 #no matches found
-                score_list[comment_offsets_index] += math.log(((mu * c_query_term / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
+                score_list[comment_offsets_index] += math.log(((mu * query_term_count / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                 comment_offsets_index += 1
 
         return score_list
@@ -89,46 +106,11 @@ class SearchEngine():
         comment.text = comment_as_list[7]
         return comment
 
-    # return range of indices from first to last term which could start with prefix in seeklist
-    def get_index_range_in_seek_list(self, prefix):
-        # if stem starts with prefix the full word will as well
-        # if prefix starts with stem the full word might start with prefix
-        def maybe_prefix(stem):
-            return stem.startswith(prefix) or prefix.startswith(stem)
-
-        lb = 0
-        rb = len(self.seek_list)
-        first_found = None
-        while lb < rb and first_found == None:
-            m = int(math.floor((lb + rb) / 2))
-            stem = self.seek_list[m][0]
-            if maybe_prefix(stem):
-                first_found = m
-            elif stem < prefix:
-                lb = m + 1
-            else:
-                rb = m
-
-        if first_found == None:
-            return range(0, 0)
-
-        # could be done in O(logN) instead of O(N)
-        lowest_index = first_found
-        while lowest_index > 0 and maybe_prefix(self.seek_list[lowest_index-1][0]):
-            lowest_index -= 1
-
-        highest_index = first_found+1
-        while highest_index < len(self.seek_list) and maybe_prefix(self.seek_list[highest_index][0]):
-            highest_index += 1
-
-        # inclusive lowest_index, exclusive highest_index
-        return range(lowest_index, highest_index)
-
     # returns offsets into comment file for all comments containing stem in ascending order
     def get_offsets_for_stem(self, stem):
-        self.index_file.seek(self.seek_list[stem])
-        posting_list = self.index_file.readline().rstrip('\n')
-        posting_list_parts = posting_list.split(':')
+        if not stem in self.seek_list:
+            return []
+        posting_list_parts = self.load_posting_list_parts(stem)
         return [ int(x.split(',')[0]) for x in posting_list_parts[2:] ]
 
     # returns offsets into comment file for all comments containing stem starting with prefix
@@ -168,12 +150,11 @@ class SearchEngine():
 
         #assume we are left with single term at this point
         assert(' ' not in query)
-        prefix = query[:-1].lower() if query[-1] == '*' else None
 
-        if(prefix == None):
-            return self.get_offsets_for_stem(self.stemmer.stemWord(query.lower()))
+        if query[-1] == '*':
+            return self.get_offsets_for_prefix(query[:-1].lower())
         else:
-            return self.get_offsets_for_prefix(prefix)
+            return self.get_offsets_for_stem(self.stemmer.stemWord(query.lower()))
 
     # BOOLEAN QUERIES
 
@@ -262,10 +243,10 @@ class SearchEngine():
 
         if not "'" in query:
             query = ' OR '.join(query.split(' '))
-            query_terms = query.split(' ')
+            query_terms = [ self.stemmer.stemWord(term.lower()) for term in query.split(' ') ]
         else:
             assert(query[0] == "'" and query[-1] == "'")
-            query_terms = [query]
+            query_terms = [ query ]
 
         t_begin_searching = time.clock()
         comment_offsets = self.get_comment_offsets_for_query(query)
@@ -297,13 +278,12 @@ class SearchEngine():
             print(f'{self.load_comment(comment_offset).text}\n')
 
 if __name__ == '__main__':
-    data_folder = 'data/fake'
+    data_directory = 'data/fake' if len(argv) < 2 else argv[1]
     search_engine = SearchEngine()
-    search_engine.loadIndex(data_folder, use_compressed = False)
-    # search_engine.loadCompressedIndex(data_folder)
-    # print('index loaded')
+    search_engine.load_index(data_directory)
+    print('index loaded')
 
-    queries = ["inte*"]
+    queries = [ 'intern' ]
     for query in queries:
         search_engine.search(query, 5)
         print('\n\n\n')

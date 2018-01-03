@@ -5,7 +5,7 @@ import filecmp
 
 from IndexCreator import *
 
-class TestIndexCreation(unittest.TestCase):
+class TestIndexCreator(unittest.TestCase):
     def setUp(self):
         # self.maxDiff = None
         self.test_directory = 'data/test'
