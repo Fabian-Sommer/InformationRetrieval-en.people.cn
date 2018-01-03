@@ -100,8 +100,7 @@ class IndexCreator():
                 self.seek_list[stem] = current_offset
                 current_offset += len(line_raw)
 
-
-        #pickle out seek_list (sorted offset_dict)
+        #pickle out seek_list
         with open(f'{self.directory}/seek_list.pickle', mode='wb') as f:
             pickle.dump(self.seek_list, f, pickle.HIGHEST_PROTOCOL)
 

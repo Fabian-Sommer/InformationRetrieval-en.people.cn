@@ -129,21 +129,15 @@ class SearchEngine():
         self.index_file.seek(self.seek_list[stem])
         posting_list = self.index_file.readline().rstrip('\n')
         posting_list_parts = posting_list.split(':')
-        return [int(x.split(',')[0]) for x in posting_list_parts[2:]]
+        return [ int(x.split(',')[0]) for x in posting_list_parts[2:] ]
 
-    # returns offsets into comment file for all comments containing stem in ascending order,
-    # where either prefix starts with stem (false positive possible) or stem starts with prefix
+    # returns offsets into comment file for all comments containing stem starting with prefix
     def get_offsets_for_prefix(self, prefix):
-        index_range = self.get_index_range_in_seek_list(prefix)
-        offsets_for_prefix = set() # prevent duplicate offsets
-        for i in index_range:
-            self.index_file.seek(self.seek_list[i][1])
-            posting_list = self.index_file.readline().rstrip('\n')
-            posting_list_parts = posting_list.split(':')
-            offsets = [int(x.split(',')[0]) for x in posting_list_parts[2:]]
-            for offset in offsets:
-                offsets_for_prefix.add(offset)
-        return offsets_for_prefix
+        stems = self.seek_list.startswith(prefix)
+        result = []
+        for stem in stems:
+            result += self.get_offsets_for_stem(stem)
+        return result
 
     def get_comment_offsets_for_phrase_query(self, query):
         match = re.search(r'\'[^"]*\'', query)
@@ -179,17 +173,7 @@ class SearchEngine():
         if(prefix == None):
             return self.get_offsets_for_stem(self.stemmer.stemWord(query.lower()))
         else:
-            offsets_for_prefix = self.get_offsets_for_prefix(prefix)
-            # filter false positives
-            result = []
-            for offset in offsets_for_prefix:
-                comment = self.load_comment(offset)
-                raw_tokens = nltk.word_tokenize(str(comment.text.lower(), encoding='utf-8'))
-                for token in raw_tokens:
-                    if token.startswith(prefix):
-                        result.append(offset)
-                        break
-            return result
+            return self.get_offsets_for_prefix(prefix)
 
     # BOOLEAN QUERIES
 
@@ -319,7 +303,7 @@ if __name__ == '__main__':
     # search_engine.loadCompressedIndex(data_folder)
     # print('index loaded')
 
-    queries = ["tragic"]
+    queries = ["inte*"]
     for query in queries:
         search_engine.search(query, 5)
         print('\n\n\n')
