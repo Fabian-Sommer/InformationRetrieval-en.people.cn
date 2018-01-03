@@ -10,6 +10,7 @@ import heapq
 import time
 from sys import argv
 
+import Report
 from Common import *
 import Huffman
 
@@ -124,12 +125,12 @@ class SearchEngine():
     def get_comment_offsets_for_phrase_query(self, query):
         match = re.search(r'\'[^"]*\'', query)
         if not match:
-            print('invalid phrase query')
+            Report.report('invalid phrase query')
             exit()
         phrase = match.group()[1:-1]
         new_query = ' AND '.join(phrase.split(' '))
         possible_matches = self.get_comment_offsets_for_query(new_query)
-        return [x for x in possible_matches if phrase in self.load_comment(x).text.lower()]
+        return [ x for x in possible_matches if phrase in self.load_comment(x).text.lower() ]
 
     # returns offsets into comment file for all comments matching the query in ascending order
     def get_comment_offsets_for_query(self, query):
@@ -227,17 +228,17 @@ class SearchEngine():
 
     def search(self, query, top_k = 10):
 
-        print(f'--------------------------------------------------searching for "{query}":')
+        Report.report(f'--------------------------------------------------searching for "{query}":')
 
         if self.is_boolean_query(query):
             comment_offsets = self.get_comment_offsets_for_query(query)
-            print(f'{len(comment_offsets)} comments matched the query')
+            Report.report(f'{len(comment_offsets)} comments matched the query')
             if len(comment_offsets) > 0:
-                print('example comment:')
+                Report.report('example comment:')
                 random_index = random.randrange(0, len(comment_offsets))
                 example_comment = self.load_comment(comment_offsets[random_index])
-                print(example_comment.text)
-            print()
+                Report.report(example_comment.text)
+            Report.report()
             return
 
 
@@ -248,17 +249,16 @@ class SearchEngine():
             assert(query[0] == "'" and query[-1] == "'")
             query_terms = [ query ]
 
-        t_begin_searching = time.clock()
+        Report.begin('searching')
         comment_offsets = self.get_comment_offsets_for_query(query)
-        print(f'{time.clock() - t_begin_searching} seconds for searching')
+        Report.finish('searching')
 
         if len(comment_offsets) == 0:
-            print('no comments matched the query')
+            Report.report('no comments matched the query')
             return
-        print(f'{len(comment_offsets)} comments matched the query')
+        Report.report(f'{len(comment_offsets)} comments matched the query')
 
-        print('calculating scores...')
-        t_begin_ranking = time.clock()
+        Report.begin('calculating scores')
         top_k_rated_comments = [] # min heap of tuples (score, comment_offset)
 
         scores = self.get_dirichlet_smoothed_score(query_terms, comment_offsets)
@@ -268,22 +268,22 @@ class SearchEngine():
                 heapq.heappush(top_k_rated_comments, (score, comment_offset))
             else:
                 heapq.heappushpop(top_k_rated_comments, (score, comment_offset))
-        t_elapsed = time.clock() - t_begin_ranking
-        print(f'{t_elapsed} seconds for scoring, {t_elapsed/len(comment_offsets)} per comment\n\n')
+        Report.finish('calculating scores')
 
-        print('results:')
+        Report.report('results:')
         top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
         for score, comment_offset in top_k_rated_comments:
-            print(f'score: {score}, text:')
-            print(f'{self.load_comment(comment_offset).text}\n')
+            Report.report(f'score: {score}, text:')
+            Report.report(f'{self.load_comment(comment_offset).text}\n')
+
+        Report.all_time_measures()
 
 if __name__ == '__main__':
     data_directory = 'data/fake' if len(argv) < 2 else argv[1]
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
-    print('index loaded')
+    Report.report('index loaded')
 
     queries = [ 'intern' ]
     for query in queries:
         search_engine.search(query, 5)
-        print('\n\n\n')
