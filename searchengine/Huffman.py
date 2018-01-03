@@ -54,20 +54,26 @@ def derive_huffman_encoding(symbol_to_frequency_dict):
 
     return heap[0], symbol_to_encoding_dict
 
-# returns bytes, up to 7 padding zeros may be appended
+# returns bytes, leading 1s and first 0 are padding: 11110011 -> 11110 = padding, 011 = data
 def encode_huffman(string, symbol_to_encoding_dict):
-    encoded_string = '0b'
+    encoded_string = ''
     for symbol in string:
         encoded_string += symbol_to_encoding_dict[symbol]
-    binary_data = bitstring.Bits(bin=encoded_string).tobytes()
-    padding = len(binary_data) * 8 - (len(encoded_string) - 2)
-    return binary_data, padding
+    padding = 8 - (len(encoded_string) % 8)
+    assert(1 <= padding <= 8)
+    bin_string = '0b' + (padding - 1) * '1' + '0' + encoded_string
+    binary_data = bitstring.Bits(bin=bin_string).tobytes()
+    return binary_data
 
-def decode_huffman(binary_data, padding, huffman_tree_root):
+def decode_huffman(binary_data, huffman_tree_root):
     decoded_string = ''
     bit_stream = bitstring.ConstBitStream(bytes=binary_data)
 
-    while bit_stream.pos < len(bit_stream) - padding:
+    # skip padding (see encode_huffman)
+    while bit_stream.read('bool'):
+        pass
+
+    while bit_stream.pos < len(bit_stream):
         node = huffman_tree_root
         while not node.is_leaf():
             node = node.child(bit_stream.read('bool'))
@@ -79,8 +85,8 @@ if __name__ == '__main__':
     string = 'hallo'
     symbol_to_frequency_dict = { 'h': 120, 'a': 20, 'l': 2, 'o': 73 }
     huffman_tree_root, symbol_to_encoding_dict = derive_huffman_encoding(symbol_to_frequency_dict)
-    encoded_string, padding = encode_huffman('hallo', symbol_to_encoding_dict)
-    decoded_string = decode_huffman(encoded_string, padding, huffman_tree_root)
+    encoded_string = encode_huffman('hallo', symbol_to_encoding_dict)
+    decoded_string = decode_huffman(encoded_string, huffman_tree_root)
 
     print(f'string: {string}')
     print(f'symbol_to_encoding_dict: {symbol_to_encoding_dict}')

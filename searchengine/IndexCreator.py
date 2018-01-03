@@ -161,11 +161,11 @@ class IndexCreator():
                 offset = 0
                 i = 0
                 while orig_line:
-                    encoded_line, padding = encode_huffman(orig_line, symbol_to_encoding_dict)
+                    encoded_line = encode_huffman(orig_line, symbol_to_encoding_dict)
                     compressed_index_file.write(encoded_line)
 
                     term = next(csv.reader(io.StringIO(orig_line), delimiter=':'))[0]
-                    self.compressed_seek_list[term] = (offset, len(encoded_line), padding)
+                    self.compressed_seek_list[term] = (offset, len(encoded_line))
 
                     i += 1
                     Report.progress(i, ' index lines compressed')
@@ -187,8 +187,8 @@ if __name__ == '__main__':
     #         with open(f'{data_directory}/compressed_seek_list.pickle', mode='rb') as compressed_seek_list_file:
     #             huffman_tree_root = pickle.load(huffman_tree_file)
     #             compressed_seek_list = pickle.load(compressed_seek_list_file)
-    #             offset, length, padding = compressed_seek_list['trump']
+    #             offset, length = compressed_seek_list['trump']
     #             compressed_index_file.seek(offset)
     #             binary_data = compressed_index_file.read(length)
-    #             decoded_string = decode_huffman(binary_data, padding, huffman_tree_root)
+    #             decoded_string = decode_huffman(binary_data, huffman_tree_root)
     #             print(decoded_string)

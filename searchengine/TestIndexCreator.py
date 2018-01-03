@@ -60,9 +60,9 @@ class TestIndexCreation(unittest.TestCase):
 
     def test_compressed_seek_list(self):
         self.index_creator.huffman_compression()
-        expected_compressed_seek_list = { '>': (0, 6, 7), 'charact': (6, 9, 2), 'event': (15, 8, 7),
-            'some': (23, 8, 6), 'special': (31, 9, 0), 'tragic': (40, 8, 1), 'trump': (48, 9, 7),
-            'xi': (57, 7, 7), '§¸': (64, 6, 1), '·': (70, 6, 5), '…': (76, 6, 4) }
+        expected_compressed_seek_list = { '>': (0, 6), 'charact': (6, 9), 'event': (15, 8),
+            'some': (23, 8), 'special': (31, 10), 'tragic': (41, 8), 'trump': (49, 9),
+            'xi': (58, 7), '§¸': (65, 6), '·': (71, 6), '…': (77, 6)}
         self.assertDictEqual(self.index_creator.compressed_seek_list, expected_compressed_seek_list)
 
     def test_compressed_index_file(self):
