@@ -1,18 +1,20 @@
 #!/usr/bin/python3
 
-import Stemmer
-from nltk.tokenize import ToktokTokenizer, sent_tokenize
-from collections import OrderedDict
 import pickle
 import heapq
 import io
 import os
-from sys import argv, setrecursionlimit
+import functools
+from collections import OrderedDict
+import sys
+
+import Stemmer
+import nltk.tokenize
 from prefixtree import PrefixDict # pip3 install git+https://github.com/provoke-vagueness/prefixtree
 
 import Report
-from Common import *
 import Huffman
+from Common import *
 
 if __name__ != '__main__':
     Report.set_quiet_mode(True)
@@ -21,7 +23,12 @@ class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
         assert(os.path.isfile(f'{self.directory}/comments.csv'))
-        setrecursionlimit(10000)
+        sys.setrecursionlimit(10000)
+        self.stemmer = Stemmer.Stemmer('english')
+
+    @functools.lru_cache(None)
+    def stem(self, token):
+        return self.stemmer.stemWord(token)
 
     def create_index(self, compress_index=True):
         #read csv to create comment_list
@@ -40,15 +47,14 @@ class IndexCreator():
 
         #process comments (tokenize and stem tokens)
         Report.begin('processing comments')
-        stemmer = Stemmer.Stemmer('english')
-        tokenizer = ToktokTokenizer()
+        tokenizer = nltk.tokenize.ToktokTokenizer()
         comments_processed = 0
         for comment in self.comment_list:
             comment_text_lower = comment.text.lower()
             comment.term_list = []
-            for sentence in sent_tokenize(comment_text_lower):
-                tokens = tokenizer.tokenize(sentence)
-                comment.term_list += stemmer.stemWords(tokens)
+            for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
+                for token in tokenizer.tokenize(sentence):
+                    comment.term_list += self.stem(token)
             comments_processed += 1
             Report.progress(comments_processed, f'/{len(self.comment_list)} comments processed')
         Report.report(f'{comments_processed}/{len(self.comment_list)} comments processed')
@@ -125,7 +131,8 @@ class IndexCreator():
         Report.begin('counting utf8 characters')
         symbol_to_frequency_dict = {}
         with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
-            def get_next_chunk(chunk_size = 100000):
+            chunk_size = 100000
+            def get_next_chunk():
                 """Reads 100000 character from the given textfile"""
                 chunk = index_file.read(chunk_size)
                 while chunk:
@@ -141,8 +148,8 @@ class IndexCreator():
                         symbol_to_frequency_dict[symbol] = 1
                     else:
                         symbol_to_frequency_dict[symbol] += 1
-                    i += 1
-                    Report.progress(i, ' characters counted', 2500000)
+                i += 1
+                Report.progress(i, f' chunks counted ({chunk_size} characters each)', 100)
         Report.finish('counting utf8 characters')
 
         # derive huffman encoding from character counts
@@ -179,17 +186,17 @@ class IndexCreator():
         Report.finish('saving compressed files')
 
 if __name__ == '__main__':
-    data_directory = 'data/fake' if len(argv) < 2 else argv[1]
+    data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
     # index_creator.huffman_compression()
-    with open(f'{data_directory}/huffman_tree.pickle', mode='rb') as huffman_tree_file:
-        with open(f'{data_directory}/compressed_index', mode='rb') as compressed_index_file:
-            with open(f'{data_directory}/compressed_seek_list.pickle', mode='rb') as compressed_seek_list_file:
-                huffman_tree_root = pickle.load(huffman_tree_file)
-                compressed_seek_list = pickle.load(compressed_seek_list_file)
-                offset, length = compressed_seek_list['xi']
-                compressed_index_file.seek(offset)
-                binary_data = compressed_index_file.read(length)
-                decoded_string = Huffman.decode(binary_data, huffman_tree_root)
-                print(decoded_string)
+    # with open(f'{data_directory}/huffman_tree.pickle', mode='rb') as huffman_tree_file:
+    #     with open(f'{data_directory}/compressed_index', mode='rb') as compressed_index_file:
+    #         with open(f'{data_directory}/compressed_seek_list.pickle', mode='rb') as compressed_seek_list_file:
+    #             huffman_tree_root = pickle.load(huffman_tree_file)
+    #             compressed_seek_list = pickle.load(compressed_seek_list_file)
+    #             offset, length = compressed_seek_list['xi']
+    #             compressed_index_file.seek(offset)
+    #             binary_data = compressed_index_file.read(length)
+    #             decoded_string = Huffman.decode(binary_data, huffman_tree_root)
+    #             print(decoded_string)

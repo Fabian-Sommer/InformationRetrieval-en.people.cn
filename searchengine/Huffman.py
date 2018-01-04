@@ -27,9 +27,12 @@ class Node():
 
     def symbols_in_subtree(self):
         if self.is_leaf():
-            return [ self.symbol ]
+            yield self.symbol
         else:
-            return self.left_child.symbols_in_subtree() + self.right_child.symbols_in_subtree()
+            for symbol in self.left_child.symbols_in_subtree():
+                yield symbol
+            for symbol in self.right_child.symbols_in_subtree():
+                yield symbol
 
     def __lt__(self, other):
         return self.weight < other.weight
