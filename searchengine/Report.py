@@ -10,11 +10,9 @@ class Report():
         self.log_file = log_file
         self.time_measures = {}
 
-    def report(self, message = ''):
+    def report(self, *args, **kwargs):
         if not self.quiet_mode:
-            print(message)
-            if self.log_file != None:
-                print(message, file = self.log_file)
+            print(*args, **kwargs)
 
     def all_time_measures(self):
         max_length = max(( len(task) for task in self.time_measures.keys() ))
@@ -26,6 +24,18 @@ class Report():
             self.report(f'{task:{max_length + 5}} | {duration:>8.2f} sec   |   {duration/total_time:7.2%}')
         self.report((len(total_row) + 5) * '-')
         self.report(total_row)
+
+        if self.log_file != None:
+            table_header = ''
+            table_row = ''
+            for task, duration in self.time_measures.items():
+                table_header += f'{task},'
+                table_row += f'{duration:.2f},'
+            table_header += 'total'
+            table_row += f'{total_time:.2f}'
+
+            self.report(table_header, file = self.log_file)
+            self.report(table_row, file = self.log_file)
 
     def progress(self, progress, message, interval = 10000):
         if progress % interval == 0:

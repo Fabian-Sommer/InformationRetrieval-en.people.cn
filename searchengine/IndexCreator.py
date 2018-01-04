@@ -5,7 +5,6 @@ import heapq
 import io
 import os
 import functools
-from collections import OrderedDict
 import sys
 
 import Stemmer
@@ -45,64 +44,58 @@ class IndexCreator():
         #process comments (tokenize and stem tokens)
         with self.report.measure('processing comments'):
             tokenizer = nltk.tokenize.ToktokTokenizer()
-            comments_processed = 0
-            for comment in self.comment_list:
+            for comments_processed, comment in enumerate(self.comment_list):
                 comment_text_lower = comment.text.lower()
                 comment.term_list = []
                 for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
                     for token in tokenizer.tokenize(sentence):
                         comment.term_list.append(self.stem(token))
-                comments_processed += 1
                 self.report.progress(comments_processed, f'/{len(self.comment_list)} comments processed')
-            self.report.report(f'{comments_processed}/{len(self.comment_list)} comments processed')
+            self.report.report(f'{len(self.comment_list)}/{len(self.comment_list)} comments processed')
 
         #create index
         with self.report.measure('creating index'):
             all_comment_dict = {}
             term_count_dict = {}
             self.comment_term_count_dict = {}
-            self.collection_term_count = 0
             for comment in self.comment_list:
-                position = 0
                 comment_dict = {}
                 self.comment_term_count_dict[comment.file_offset] = len(comment.term_list)
-                self.collection_term_count += len(comment.term_list)
-                for stem in comment.term_list:
+                for position, stem in enumerate(comment.term_list):
                     if not stem in comment_dict:
-                        comment_dict[stem] = []
-                    comment_dict[stem].append(position)
-                    position += 1
+                        comment_dict[stem] = [ position ]
+                    else:
+                        comment_dict[stem].append(position)
                 for stem, positions in comment_dict.items():
                     # positions = list of token pos in comment
                     if not stem in all_comment_dict:
-                        all_comment_dict[stem] = []
-                        term_count_dict[stem] = 0
-                    all_comment_dict[stem].append([comment.file_offset, positions])
-                    term_count_dict[stem] += len(positions)
+                        all_comment_dict[stem] = [(comment.file_offset, positions)]
+                        term_count_dict[stem] = len(positions)
+                    else:
+                        all_comment_dict[stem].append((comment.file_offset, positions))
+                        term_count_dict[stem] += len(positions)
+            self.collection_term_count = sum(self.comment_term_count_dict.values())
 
-        #save index as csv
         with self.report.measure('saving files'):
-            sorted_all_comment_dict = OrderedDict(sorted(all_comment_dict.items(), key=lambda t:t[0]))
+            #save index as csv
             self.seek_list = PrefixDict()
             current_offset = 0
             with open(f'{self.directory}/index.csv', mode='wb') as f:
-                for stem, posting_list in sorted_all_comment_dict.items():
+                for stem in sorted(all_comment_dict.keys()):
+                    posting_list = all_comment_dict[stem]
                     escaped_stem = stem.replace('"', '""')
                     line_string = f'"{escaped_stem}":{term_count_dict[stem]}'
-                    sorted_posting_list = [x for x in sorted(posting_list)]
-                    for posting_list_part in sorted_posting_list:
-                        line_string += ':'
-                        line_string += str(posting_list_part[0])
-                        for position in posting_list_part[1]:
-                            line_string += ','
-                            line_string += str(position)
+                    for posting_list_part in sorted(posting_list):
+                        # posting_list_part[0] = comment.file_offset
+                        line_string += f':{posting_list_part[0]},'
+                        # posting_list_part[1] = list of token positions in comment
+                        line_string += ','.join((str(i) for i in posting_list_part[1]))
                     line_string += '\n'
                     line_raw = line_string.encode()
                     f.write(line_raw)
                     self.seek_list[stem] = current_offset
                     current_offset += len(line_raw)
 
-            #pickle out seek_list
             with open(f'{self.directory}/seek_list.pickle', mode='wb') as f:
                 pickle.dump(self.seek_list, f, pickle.HIGHEST_PROTOCOL)
 
@@ -125,14 +118,13 @@ class IndexCreator():
             symbol_to_frequency_dict = {}
             with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
                 chunk_size = 100000
-                def get_next_chunk():
-                    """Reads 100000 character from the given textfile"""
+                def next_chunk_generator():
                     chunk = index_file.read(chunk_size)
                     while chunk:
                         yield chunk
                         chunk = index_file.read(chunk_size)
-                i = 0
-                for chunk in get_next_chunk():
+
+                for i, chunk in enumerate(next_chunk_generator()):
                     for symbol in chunk:
                         if symbol == '\n':
                             continue
@@ -141,7 +133,6 @@ class IndexCreator():
                             symbol_to_frequency_dict[symbol] = 1
                         else:
                             symbol_to_frequency_dict[symbol] += 1
-                    i += 1
                     self.report.progress(i, f' chunks counted ({chunk_size} characters each)', 100)
 
         # derive huffman encoding from character counts
@@ -155,10 +146,14 @@ class IndexCreator():
             self.compressed_seek_list = {}
             with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
                 with open(f'{self.directory}/compressed_index', mode='wb') as compressed_index_file:
-                    orig_line = index_file.readline().rstrip('\n')
+                    def read_line_generator():
+                        orig_line = index_file.readline().rstrip('\n')
+                        while orig_line:
+                            yield orig_line
+                            orig_line = index_file.readline().rstrip('\n')
+
                     offset = 0
-                    i = 0
-                    while orig_line:
+                    for i, orig_line in enumerate(read_line_generator()):
                         term = next(csv.reader(io.StringIO(orig_line), delimiter=':'))[0]
                         line_without_term = orig_line[len(term) + 3:]
                         encoded_line = Huffman.encode(line_without_term, symbol_to_encoding_dict)
@@ -166,18 +161,16 @@ class IndexCreator():
 
                         self.compressed_seek_list[term] = (offset, len(encoded_line))
 
-                        i += 1
                         self.report.progress(i, ' index lines compressed')
 
                         offset += len(encoded_line)
-                        orig_line = index_file.readline().rstrip('\n')
 
             with open(f'{self.directory}/compressed_seek_list.pickle', mode='wb') as f:
                 pickle.dump(self.compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
     data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
-    with open(f'{data_directory}/IndexCreator.log', mode='a') as log_file:
+    with open(f'{data_directory}/log_{os.path.basename(__file__)}.csv', mode='a') as log_file:
         index_creator = IndexCreator(data_directory, log_file)
         index_creator.create_index()
         # index_creator.huffman_compression()
