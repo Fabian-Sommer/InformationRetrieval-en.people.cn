@@ -54,7 +54,7 @@ class IndexCreator():
             comment.term_list = []
             for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
                 for token in tokenizer.tokenize(sentence):
-                    comment.term_list += self.stem(token)
+                    comment.term_list.append(self.stem(token))
             comments_processed += 1
             Report.progress(comments_processed, f'/{len(self.comment_list)} comments processed')
         Report.report(f'{comments_processed}/{len(self.comment_list)} comments processed')
