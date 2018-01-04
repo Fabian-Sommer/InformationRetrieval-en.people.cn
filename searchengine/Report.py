@@ -1,41 +1,61 @@
 #!/usr/bin/python3
 
 import time
+from functools import wraps
+from contextlib import contextmanager
 
-quiet_mode = False
-def set_quiet_mode(boolean):
-    global quiet_mode
-    quiet_mode = boolean
+class Report():
+    def __init__(self, quiet_mode = False, log_file = None):
+        self.quiet_mode = quiet_mode
+        self.log_file = log_file
+        self.time_measures = {}
 
-def report(message = ''):
-    if not quiet_mode:
-        print(message)
+    def report(self, message = ''):
+        if not self.quiet_mode:
+            print(message)
+            if self.log_file != None:
+                print(message, file = self.log_file)
 
-time_measures = {}
-def begin(task):
-    time_measures[task] = time.process_time()
-    report(f'\n{task}...')
+    def all_time_measures(self):
+        max_length = max(( len(task) for task in self.time_measures.keys() ))
+        total_time = sum(self.time_measures.values())
+        total_row = f'{"total_time":{max_length + 5}} | {total_time:>8.2f} sec   |   100.00%\n'
+        self.report(f'\n{"task":{max_length + 5}} |    duration    |   % duration')
+        self.report((len(total_row) + 5) * '-')
+        for task, duration in self.time_measures.items():
+            self.report(f'{task:{max_length + 5}} | {duration:>8.2f} sec   |   {duration/total_time:7.2%}')
+        self.report((len(total_row) + 5) * '-')
+        self.report(total_row)
 
-def finish(task):
-    if not task in time_measures:
-        report(f'WARNING: Report.begin("{task}") has to be called before Report.finish("{task}")')
-        return
+    def progress(self, progress, message, interval = 10000):
+        if progress % interval == 0:
+            self.report(f'{progress}{message}')
 
-    time_measures[task] = time.process_time() - time_measures[task]
-    report(f'finished {task} after {time_measures[task]:.2f} seconds')
+    def measure_deco(self, measured_function, *args, **kwargs):
+        @wraps(measured_function)
+        def measure_wrapper(*args, **kwargs):
+            print(f'{measured_function.__name__}...')
+            t_begin = time.process_time()
+            result = measured_function(*args, **kwargs)
+            duration = time.process_time() - t_begin
+            self.time_measures[task_name] = duration
+            self.report(f'finished {measured_function.__name__} in {duration:.2f} sec')
+            return result
+        return measure_wrapper
 
-def all_time_measures():
-    max_length = max([ len(task) for task in time_measures.keys() ])
-    total_time = sum(time_measures.values())
-    total_row = f'{"total_time":{max_length + 5}} | {total_time:>8.2f} sec   |   100.00%'
-    report()
-    report(f'{"task":{max_length + 5}} |    duration    |   % duration')
-    report((len(total_row) + 5) * '-')
-    for task, duration in time_measures.items():
-        report(f'{task:{max_length + 5}} | {duration:>8.2f} sec   |   {duration/total_time:7.2%}')
-    report((len(total_row) + 5) * '-')
-    report(total_row)
+    @contextmanager
+    def measure(self, task_name):
+        self.report(f'{task_name}...')
+        t_begin = time.process_time()
+        yield
+        duration = time.process_time() - t_begin
+        self.time_measures[task_name] = duration
+        self.report(f'finished {task_name} in {duration:.2f} sec')
 
-def progress(progress, message, interval = 10000):
-    if progress % interval == 0:
-        report(f'{progress}{message}')
+if __name__ == '__main__':
+    report = Report()
+    with report.measure('heavy work'):
+        t_begin = time.process_time()
+        while time.process_time() - t_begin < 0.2:
+            pass
+    report.all_time_measures()

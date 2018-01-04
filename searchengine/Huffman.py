@@ -22,7 +22,7 @@ class Node():
         assert(not self.is_leaf() and bit in (0, 1))
         if bit == 0:
             return self.left_child
-        elif bit == 1:
+        else:
             return self.right_child
 
     def symbols_in_subtree(self):
