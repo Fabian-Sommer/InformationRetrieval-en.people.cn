@@ -72,14 +72,15 @@ class SearchEngine():
             for comment_list in posting_list_parts[2:]:
                 if comment_offsets_index >= len(comment_offsets):
                     break
-                occurences = comment_list.split(',')
-                while comment_offsets_index < len(comment_offsets) and int(occurences[0]) > comment_offsets[comment_offsets_index]:
+                first_occurence = int(comment_list.partition(',')[0])
+                len_occurrences = comment_list.count(',') + 1
+                while comment_offsets_index < len(comment_offsets) and first_occurence > comment_offsets[comment_offsets_index]:
                     #term not found -> 0 occurences in comment
                     score_list[comment_offsets_index] += math.log(((mu * query_term_count / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                     comment_offsets_index += 1
 
-                if comment_offsets_index < len(comment_offsets) and int(occurences[0]) == comment_offsets[comment_offsets_index]:
-                    fD_query_term = len(occurences) - 1
+                if comment_offsets_index < len(comment_offsets) and first_occurence == comment_offsets[comment_offsets_index]:
+                    fD_query_term = len_occurrences - 1
                     score_list[comment_offsets_index] += math.log((fD_query_term + (mu * query_term_count / self.collection_term_count))/(self.comment_term_count_dict[comment_offsets[comment_offsets_index]] + mu))
                     comment_offsets_index += 1
             while comment_offsets_index < len(comment_offsets):
@@ -112,7 +113,7 @@ class SearchEngine():
         if not stem in self.seek_list:
             return []
         posting_list_parts = self.load_posting_list_parts(stem)
-        return [ int(x.split(',')[0]) for x in posting_list_parts[2:] ]
+        return [ int(x.partition(',')[0]) for x in posting_list_parts[2:] ]
 
     # returns offsets into comment file for all comments containing stem starting with prefix
     def get_offsets_for_prefix(self, prefix):
@@ -128,7 +129,7 @@ class SearchEngine():
             Report.report('invalid phrase query')
             exit()
         phrase = match.group()[1:-1]
-        new_query = ' AND '.join(phrase.split(' '))
+        new_query = phrase.replace(' ', ' AND ')
         possible_matches = self.get_comment_offsets_for_query(new_query)
         return [ x for x in possible_matches if phrase in self.load_comment(x).text.lower() ]
 
@@ -136,18 +137,18 @@ class SearchEngine():
     def get_comment_offsets_for_query(self, query):
         if "'" in query:
             # can only search for whole query as one phrase
-            assert(query[0] == "'" and query[-1] == "'")
+            assert(query[0] == "'" == query[-1])
             return self.get_comment_offsets_for_phrase_query(query)
 
         if ' NOT ' in query:
-            split_query = query.split(' NOT ', 1)
-            return self.search_boolean_NOT(split_query[0], split_query[1])
+            split_query = query.partition(' NOT ')
+            return self.search_boolean_NOT(split_query[0], split_query[2])
         if ' AND ' in query:
-            split_query = query.split(' AND ', 1)
-            return self.search_boolean_AND(split_query[0], split_query[1])
+            split_query = query.partition(' AND ')
+            return self.search_boolean_AND(split_query[0], split_query[2])
         if ' OR ' in query:
-            split_query = query.split(' OR ', 1)
-            return self.search_boolean_OR(split_query[0], split_query[1])
+            split_query = query.partition(' OR ')
+            return self.search_boolean_OR(split_query[0], split_query[2])
 
         #assume we are left with single term at this point
         assert(' ' not in query)
@@ -243,10 +244,10 @@ class SearchEngine():
 
 
         if not "'" in query:
-            query = ' OR '.join(query.split(' '))
-            query_terms = [ self.stemmer.stemWord(term.lower()) for term in query.split(' ') ]
+            query = query.replace(' ', ' OR ')
+            query_terms = [ self.stemmer.stemWord(term.lower()) for term in query.split(' OR ') ]
         else:
-            assert(query[0] == "'" and query[-1] == "'")
+            assert(query[0] == "'" == query[-1])
             query_terms = [ query ]
 
         Report.begin('searching')

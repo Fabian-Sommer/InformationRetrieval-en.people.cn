@@ -5,9 +5,9 @@ from functools import wraps
 from contextlib import contextmanager
 
 class Report():
-    def __init__(self, quiet_mode = False, log_file = None):
+    def __init__(self, quiet_mode = False, log_file_path = ''):
         self.quiet_mode = quiet_mode
-        self.log_file = log_file
+        self.log_file_path = log_file_path
         self.time_measures = {}
 
     def report(self, *args, **kwargs):
@@ -25,17 +25,18 @@ class Report():
         self.report((len(total_row) + 5) * '-')
         self.report(total_row)
 
-        if self.log_file != None:
-            table_header = ''
-            table_row = ''
-            for task, duration in self.time_measures.items():
-                table_header += f'{task},'
-                table_row += f'{duration:.2f},'
-            table_header += 'total'
-            table_row += f'{total_time:.2f}'
+        if self.log_file_path != '':
+            with open(self.log_file_path, 'a') as log_file:
+                table_header = ''
+                table_row = ''
+                for task, duration in self.time_measures.items():
+                    table_header += f'{task},'
+                    table_row += f'{duration:.2f},'
+                table_header += 'total'
+                table_row += f'{total_time:.2f}'
 
-            self.report(table_header, file = self.log_file)
-            self.report(table_row, file = self.log_file)
+                self.report(table_header, file = log_file)
+                self.report(table_row, file = log_file)
 
     def progress(self, progress, message, interval = 10000):
         if progress % interval == 0:
