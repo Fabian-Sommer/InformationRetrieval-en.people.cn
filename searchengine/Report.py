@@ -46,9 +46,9 @@ class Report():
         @wraps(measured_function)
         def measure_wrapper(*args, **kwargs):
             print(f'{measured_function.__name__}...')
-            t_begin = time.process_time()
+            t_begin = time.time()
             result = measured_function(*args, **kwargs)
-            duration = time.process_time() - t_begin
+            duration = time.time() - t_begin
             self.time_measures[task_name] = duration
             self.report(f'finished {measured_function.__name__} in {duration:.2f} sec')
             return result
@@ -57,16 +57,16 @@ class Report():
     @contextmanager
     def measure(self, task_name):
         self.report(f'{task_name}...')
-        t_begin = time.process_time()
+        t_begin = time.time()
         yield
-        duration = time.process_time() - t_begin
+        duration = time.time() - t_begin
         self.time_measures[task_name] = duration
         self.report(f'finished {task_name} in {duration:.2f} sec')
 
 if __name__ == '__main__':
     report = Report()
     with report.measure('heavy work'):
-        t_begin = time.process_time()
-        while time.process_time() - t_begin < 0.2:
+        t_begin = time.time()
+        while time.time() - t_begin < 0.2:
             pass
     report.all_time_measures()

@@ -6,6 +6,7 @@ import io
 import os
 import functools
 import sys
+import multiprocessing
 
 import Stemmer
 import nltk.tokenize
@@ -15,43 +16,70 @@ import Huffman
 from Report import Report
 from Common import *
 
+# start with line {process_responsibility} and process every {number_of_processes}th row
+def processCommentsFile(directory, number_of_processes, process_responsibility):
+    comment_list = []
+    with open(f'{directory}/comments.csv', mode='rb') as f:
+        csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
+        previous_offset = 0
+
+        tokenizer = nltk.tokenize.ToktokTokenizer()
+        stemmer = Stemmer.Stemmer('english')
+        stem = functools.lru_cache(None)(stemmer.stemWord)
+
+        for i, csv_line in enumerate(csv_reader):
+            if i % number_of_processes != process_responsibility:
+                continue
+
+            comment = Comment().init_from_csv_line(csv_line, previous_offset)
+
+            comment_text_lower = comment.text.lower()
+            for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
+                for token in tokenizer.tokenize(sentence):
+                    comment.term_list.append(stem(token))
+            comment_list.append(comment)
+            previous_offset = f.tell()
+
+            if process_responsibility == 0 and len(comment_list) % 5000 == 0:
+                print(f'{len(comment_list) * number_of_processes} comments processed (estimated)')
+
+    with open(f'{directory}/comment_list_{process_responsibility}.pickle', mode='wb') as f:
+        pickle.dump(comment_list, f, pickle.HIGHEST_PROTOCOL)
+
+
+
 class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
         assert(os.path.isfile(f'{self.directory}/comments.csv'))
         sys.setrecursionlimit(10000)
-        self.stemmer = Stemmer.Stemmer('english')
         self.report = Report(quiet_mode = __name__ != '__main__',
             log_file_path = f'{directory}/log_IndexCreator.py.csv')
 
-    @functools.lru_cache(None)
-    def stem(self, token):
-        return self.stemmer.stemWord(token)
-
     def create_index(self, compress_index=True):
         #read csv to create comment_list
-        with self.report.measure('parsing comments.csv'):
+        with self.report.measure('processing comments.csv'):
             self.comment_list = []
-            with open(f'{self.directory}/comments.csv', mode='rb') as f:
-                csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
-                previous_offset = f.tell()
-                for csv_line in csv_reader:
-                    comment = Comment().init_from_csv_line(csv_line, previous_offset)
-                    self.comment_list.append(comment)
-                    self.report.progress(len(self.comment_list), ' comments parsed')
-                    previous_offset = f.tell()
-            self.report.report(f'found {len(self.comment_list)} comments')
 
-        #process comments (tokenize and stem tokens)
-        with self.report.measure('processing comments'):
-            tokenizer = nltk.tokenize.ToktokTokenizer()
-            for comments_processed, comment in enumerate(self.comment_list, 1):
-                comment_text_lower = comment.text.lower()
-                for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
-                    for token in tokenizer.tokenize(sentence):
-                        comment.term_list.append(self.stem(token))
-                self.report.progress(comments_processed, f'/{len(self.comment_list)} comments processed')
-            self.report.report(f'{len(self.comment_list)}/{len(self.comment_list)} comments processed')
+            number_of_processes = len(os.sched_getaffinity(0)) # number of usable CPUs
+            self.report.report(f'using {number_of_processes} processes')
+
+            with multiprocessing.Pool(processes=number_of_processes) as pool:
+                for i in range(number_of_processes):
+                    pool.apply_async(
+                        processCommentsFile, args=(self.directory, number_of_processes, i))
+                pool.close()
+                pool.join()
+
+            for i in range(number_of_processes):
+                file_path = f'{self.directory}/comment_list_{i}.pickle'
+                with open(file_path, mode='rb') as f:
+                    self.comment_list += pickle.load(f)
+                os.remove(file_path)
+
+
+            self.report.report(f'processed all {len(self.comment_list)} comments')
+        return
 
         #create index
         with self.report.measure('creating index'):
