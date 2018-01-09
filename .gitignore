@@ -1,4 +1,6 @@
 *.pyc
+*.npy
+*.d2v
 /searchengine/data/*
 !/searchengine/data/test/expected_*
 !/searchengine/data/test/comments.csv
