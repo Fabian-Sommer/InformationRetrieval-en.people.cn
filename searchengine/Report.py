@@ -26,7 +26,7 @@ class Report():
         self.report((len(total_row) + 5) * '-')
         for task, duration in self.time_measures.items():
             self.report(f'{task:{max_length + 5}} | {duration:>8.2f} sec   |'
-                        '   {duration/total_time:7.2%}')
+                        f'   {duration/total_time:7.2%}')
         self.report((len(total_row) + 5) * '-')
         self.report(total_row)
 

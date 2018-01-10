@@ -71,7 +71,7 @@ class IndexCreator():
 
             # number of usable CPUs
             number_of_processes = len(os.sched_getaffinity(0))
-            self.report.report(f'using {number_of_processes} processes')
+            self.report.report(f'starting {number_of_processes} processes')
 
             with multiprocessing.Pool(processes=number_of_processes) as pool:
                 for i in range(number_of_processes):
@@ -232,17 +232,18 @@ if __name__ == '__main__':
     data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
-    index_creator.huffman_compression()
-    with open(f'{data_directory}/huffman_tree.pickle', mode='rb') \
-            as huffman_tree_file:
-        with open(f'{data_directory}/compressed_index', mode='rb') \
-                as compressed_index_file:
-            with open(f'{data_directory}/compressed_seek_list.pickle',
-                      mode='rb') as compressed_seek_list_file:
-                huffman_tree_root = pickle.load(huffman_tree_file)
-                compressed_seek_list = pickle.load(compressed_seek_list_file)
-                offset, length = compressed_seek_list['xi']
-                compressed_index_file.seek(offset)
-                binary_data = compressed_index_file.read(length)
-                decoded_string = Huffman.decode(binary_data, huffman_tree_root)
-                print(decoded_string)
+    # index_creator.huffman_compression()
+    # with open(f'{data_directory}/huffman_tree.pickle', mode='rb') \
+    #         as huffman_tree_file:
+    #     with open(f'{data_directory}/compressed_index', mode='rb') \
+    #             as compressed_index_file:
+    #         with open(f'{data_directory}/compressed_seek_list.pickle',
+    #                   mode='rb') as compressed_seek_list_file:
+    #             huffman_tree_root = pickle.load(huffman_tree_file)
+    #             compressed_seek_list = pickle.load(compressed_seek_list_file)
+    #             offset, length = compressed_seek_list['xi']
+    #             compressed_index_file.seek(offset)
+    #             binary_data = compressed_index_file.read(length)
+    #             decoded_string = Huffman.decode(binary_data,
+    #                                             huffman_tree_root)
+    #             print(decoded_string)
