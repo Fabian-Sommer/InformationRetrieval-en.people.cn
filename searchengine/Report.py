@@ -4,8 +4,9 @@ import time
 from functools import wraps
 from contextlib import contextmanager
 
+
 class Report():
-    def __init__(self, quiet_mode = False, log_file_path = ''):
+    def __init__(self, quiet_mode=False, log_file_path=''):
         self.quiet_mode = quiet_mode
         self.log_file_path = log_file_path
         self.time_measures = {}
@@ -15,13 +16,17 @@ class Report():
             print(*args, **kwargs)
 
     def all_time_measures(self):
-        max_length = max(( len(task) for task in self.time_measures.keys() ))
+        max_length = max((len(task) for task in self.time_measures.keys()))
         total_time = sum(self.time_measures.values())
-        total_row = f'{"total_time":{max_length + 5}} | {total_time:>8.2f} sec   |   100.00%\n'
-        self.report(f'\n{"task":{max_length + 5}} |    duration    |   % duration')
+        total_row = \
+            f'{"total_time":{max_length + 5}} | {total_time:>8.2f} sec'
+        '   |   100.00%\n'
+        self.report(f'\n{"task":{max_length + 5}} |    duration    |'
+                    '   % duration')
         self.report((len(total_row) + 5) * '-')
         for task, duration in self.time_measures.items():
-            self.report(f'{task:{max_length + 5}} | {duration:>8.2f} sec   |   {duration/total_time:7.2%}')
+            self.report(f'{task:{max_length + 5}} | {duration:>8.2f} sec   |'
+                        '   {duration/total_time:7.2%}')
         self.report((len(total_row) + 5) * '-')
         self.report(total_row)
 
@@ -35,10 +40,10 @@ class Report():
                 table_header += 'total'
                 table_row += f'{total_time:.2f}'
 
-                self.report(table_header, file = log_file)
-                self.report(table_row, file = log_file)
+                self.report(table_header, file=log_file)
+                self.report(table_row, file=log_file)
 
-    def progress(self, progress, message, interval = 10000):
+    def progress(self, progress, message, interval=10000):
         if progress % interval == 0:
             self.report(f'{progress}{message}')
 
@@ -50,7 +55,8 @@ class Report():
             result = measured_function(*args, **kwargs)
             duration = time.time() - t_begin
             self.time_measures[task_name] = duration
-            self.report(f'finished {measured_function.__name__} in {duration:.2f} sec')
+            self.report(f'finished {measured_function.__name__} in '
+                        '{duration:.2f} sec')
             return result
         return measure_wrapper
 
@@ -62,6 +68,7 @@ class Report():
         duration = time.time() - t_begin
         self.time_measures[task_name] = duration
         self.report(f'finished {task_name} in {duration:.2f} sec')
+
 
 if __name__ == '__main__':
     report = Report()

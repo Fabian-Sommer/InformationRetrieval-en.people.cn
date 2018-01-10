@@ -6,6 +6,7 @@ import filecmp
 from IndexCreator import *
 from SearchEngine import *
 
+
 class TestSearchEngine(unittest.TestCase):
     def setUp(self):
         # self.maxDiff = None
@@ -35,6 +36,7 @@ class TestSearchEngine(unittest.TestCase):
     def test_dirichlet_smoothed_score(self):
         # TODO
         self.assertTrue(True)
+
 
 if __name__ == '__main__':
     unittest.main()

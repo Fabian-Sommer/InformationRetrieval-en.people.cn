@@ -1,9 +1,10 @@
 import csv
 
+
 class Comment():
 
-    def __init__(self, cid = 0, url = '', author = '', time = '', parent = 0, likes = 0,
-                    dislikes = 0, text = '', file_offset = 0, term_list = []):
+    def __init__(self, cid=0, url='', author='', time='', parent=0, likes=0,
+                 dislikes=0, text='', file_offset=0):
         self.cid = cid
         self.url = url
         self.author = author
@@ -13,7 +14,7 @@ class Comment():
         self.dislikes = dislikes
         self.text = text
         self.file_offset = file_offset
-        self.term_list = term_list
+        self.term_list = []
 
     def init_from_csv_line(self, csv_line, file_offset):
         self.cid = int(csv_line[0])
@@ -40,7 +41,10 @@ class Comment():
             self.term_list == other.term_list
 
     def __repr__(self):
-        return f"Comment({self.cid}, '{self.url}', '{self.author}', '{self.time}', {self.parent}, {self.likes}, {self.dislikes}, '{self.text}', {self.file_offset}, {self.term_list})"
+        return f"Comment({self.cid}, '{self.url}', '{self.author}', "
+        "'{self.time}', {self.parent}, {self.likes}, {self.dislikes}, "
+        "'{self.text}', {self.file_offset}, {self.term_list})"
+
 
 class CSVInputFile(object):
     """ File-like object. """

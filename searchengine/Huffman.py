@@ -3,6 +3,7 @@
 import bitstring
 import heapq
 
+
 class Node():
     def init_leaf(self, symbol, weight):
         self.symbol = symbol
@@ -37,11 +38,13 @@ class Node():
     def __lt__(self, other):
         return self.weight < other.weight
 
+
 # returns huffman_tree_root and symbol_to_encoding_dict
 def derive_encoding(symbol_to_frequency_dict):
-    symbol_to_encoding_dict = dict(( (symbol, '') for symbol in symbol_to_frequency_dict.keys() ))
-    heap = [ Node().init_leaf(symbol, frequency)
-        for symbol, frequency in symbol_to_frequency_dict.items() ]
+    symbol_to_encoding_dict = dict(
+        ((symbol, '') for symbol in symbol_to_frequency_dict.keys()))
+    heap = [Node().init_leaf(symbol, frequency)
+            for symbol, frequency in symbol_to_frequency_dict.items()]
     heapq.heapify(heap)
     while len(heap) > 1:
         left_child = heapq.heappop(heap)
@@ -49,13 +52,17 @@ def derive_encoding(symbol_to_frequency_dict):
         heapq.heappush(heap, Node().init_parent(left_child, right_child))
 
         for symbol in left_child.symbols_in_subtree():
-            symbol_to_encoding_dict[symbol] = '0' + symbol_to_encoding_dict[symbol]
+            symbol_to_encoding_dict[symbol] = \
+                '0' + symbol_to_encoding_dict[symbol]
         for symbol in right_child.symbols_in_subtree():
-            symbol_to_encoding_dict[symbol] = '1' + symbol_to_encoding_dict[symbol]
+            symbol_to_encoding_dict[symbol] = \
+                '1' + symbol_to_encoding_dict[symbol]
 
     return heap[0], symbol_to_encoding_dict
 
-# returns bytes, leading 1s and first 0 are padding: 11110011 -> 11110 = padding, 011 = data
+
+# returns bytes, leading 1s and first 0 are padding:
+# 11110011 -> 11110 = padding, 011 = data
 def encode(string, symbol_to_encoding_dict):
     encoded_string = ''
     for symbol in string:
@@ -65,6 +72,7 @@ def encode(string, symbol_to_encoding_dict):
     bin_string = '0b' + (padding - 1) * '1' + '0' + encoded_string
     binary_data = bitstring.Bits(bin=bin_string).tobytes()
     return binary_data
+
 
 def decode(binary_data, huffman_tree_root):
     decoded_string = ''
@@ -82,10 +90,12 @@ def decode(binary_data, huffman_tree_root):
 
     return decoded_string
 
+
 if __name__ == '__main__':
     string = 'hallo'
-    symbol_to_frequency_dict = { 'h': 120, 'a': 20, 'l': 2, 'o': 73 }
-    huffman_tree_root, symbol_to_encoding_dict = derive_encoding(symbol_to_frequency_dict)
+    symbol_to_frequency_dict = {'h': 120, 'a': 20, 'l': 2, 'o': 73}
+    huffman_tree_root, symbol_to_encoding_dict = \
+        derive_encoding(symbol_to_frequency_dict)
     encoded_string = encode('hallo', symbol_to_encoding_dict)
     decoded_string = decode(encoded_string, huffman_tree_root)
 
