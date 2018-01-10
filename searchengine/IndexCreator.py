@@ -18,8 +18,8 @@ from Report import Report
 from Common import *
 
 
-def processCommentsFile(directory, number_of_processes,
-                        process_responsibility):
+def process_comments_file(directory, number_of_processes,
+                          process_responsibility):
     # start with line {process_responsibility} and
     # process every {number_of_processes}th row
     comment_list = []
@@ -33,6 +33,9 @@ def processCommentsFile(directory, number_of_processes,
 
         for i, csv_line in enumerate(csv_reader):
             if i % number_of_processes != process_responsibility:
+                if (i % number_of_processes ==
+                        (process_responsibility - 1) % number_of_processes):
+                    previous_offset = f.tell()
                 continue
 
             comment = Comment().init_from_csv_line(csv_line, previous_offset)
@@ -42,7 +45,6 @@ def processCommentsFile(directory, number_of_processes,
                 for token in tokenizer.tokenize(sentence):
                     comment.term_list.append(stem(token))
             comment_list.append(comment)
-            previous_offset = f.tell()
 
             if process_responsibility == 0 and len(comment_list) % 5000 == 0:
                 print(f'{len(comment_list) * number_of_processes} comments '
@@ -74,7 +76,7 @@ class IndexCreator():
             with multiprocessing.Pool(processes=number_of_processes) as pool:
                 for i in range(number_of_processes):
                     pool.apply_async(
-                        processCommentsFile,
+                        process_comments_file,
                         args=(self.directory, number_of_processes, i))
                 pool.close()
                 pool.join()
@@ -196,8 +198,8 @@ class IndexCreator():
             self.compressed_seek_list = {}
             with open(f'{self.directory}/index.csv',
                       mode='r', encoding='utf-8') as index_file:
-                with open(f'{self.directory}/compressed_index', mode='wb')
-                as compressed_index_file:
+                with open(f'{self.directory}/compressed_index', mode='wb') \
+                        as compressed_index_file:
                     def read_line_generator():
                         orig_line = index_file.readline().rstrip('\n')
                         while orig_line:
@@ -231,10 +233,10 @@ if __name__ == '__main__':
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
     index_creator.huffman_compression()
-    with open(f'{data_directory}/huffman_tree.pickle', mode='rb')
-    as huffman_tree_file:
-        with open(f'{data_directory}/compressed_index', mode='rb')
-        as compressed_index_file:
+    with open(f'{data_directory}/huffman_tree.pickle', mode='rb') \
+            as huffman_tree_file:
+        with open(f'{data_directory}/compressed_index', mode='rb') \
+                as compressed_index_file:
             with open(f'{data_directory}/compressed_seek_list.pickle',
                       mode='rb') as compressed_seek_list_file:
                 huffman_tree_root = pickle.load(huffman_tree_file)

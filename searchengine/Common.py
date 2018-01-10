@@ -4,7 +4,7 @@ import csv
 class Comment():
 
     def __init__(self, cid=0, url='', author='', time='', parent=0, likes=0,
-                 dislikes=0, text='', file_offset=0):
+                 dislikes=0, text='', file_offset=0, term_list=None):
         self.cid = cid
         self.url = url
         self.author = author
@@ -14,7 +14,7 @@ class Comment():
         self.dislikes = dislikes
         self.text = text
         self.file_offset = file_offset
-        self.term_list = []
+        self.term_list = [] if term_list is None else term_list
 
     def init_from_csv_line(self, csv_line, file_offset):
         self.cid = int(csv_line[0])
@@ -29,21 +29,30 @@ class Comment():
         return self
 
     def __eq__(self, other):
-        return self.cid == other.cid and \
-            self.url == other.url and \
-            self.author == other.author and \
-            self.time == other.time and \
-            self.parent == other.parent and \
-            self.likes == other.likes and \
-            self.dislikes == other.dislikes and \
-            self.text == other.text and \
-            self.file_offset == other.file_offset and \
-            self.term_list == other.term_list
+        if self.cid == other.cid:
+            if not (self.url == other.url and
+                    self.author == other.author and
+                    self.time == other.time and
+                    self.parent == other.parent and
+                    self.likes == other.likes and
+                    self.dislikes == other.dislikes and
+                    self.text == other.text and
+                    self.file_offset == other.file_offset and
+                    self.term_list == other.term_list):
+                print('warning: same id but not equal:\n',
+                      self, '\n!=\n', other)
+                return False
+            return True
+        else:
+            return False
 
     def __repr__(self):
-        return f"Comment({self.cid}, '{self.url}', '{self.author}', "
-        "'{self.time}', {self.parent}, {self.likes}, {self.dislikes}, "
-        "'{self.text}', {self.file_offset}, {self.term_list})"
+        return f"Comment({self.cid}, '{self.url}', '{self.author}', " \
+            f"'{self.time}', {self.parent}, {self.likes}, {self.dislikes}, " \
+            f"'{self.text}', {self.file_offset}, {self.term_list})"
+
+    def __hash__(self):
+        return self.cid
 
 
 class CSVInputFile(object):

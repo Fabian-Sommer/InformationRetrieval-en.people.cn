@@ -31,7 +31,7 @@ class TestIndexCreator(unittest.TestCase):
         self.assertTrue(
             os.path.isfile(f'{self.test_directory}/expected_index.csv'),
             f'could not find expected_index.csv in {self.test_directory}')
-        expected_comment_list = [
+        expected_comment_list = frozenset([
             Comment(1767167970,
                     'http://en.people.cn/n/2015/0101/c90785-8830442.html',
                     'klive', '2015-01-01T14:34:08', None, 0, 0,
@@ -44,10 +44,9 @@ class TestIndexCreator(unittest.TestCase):
                     'http://en.people.cn/n/2015/0101/c90785-8830442.html',
                     'enpeople', '2015-01-01T04:18:20', None, 0, 0,
                     'some special §¸…· characters', 255,
-                    ['some', 'special', '§¸', '…', '·', 'charact'])
-        ]
-        self.assertEqual(self.index_creator.comment_list,
-                         expected_comment_list)
+                    ['some', 'special', '§¸', '…', '·', 'charact'])])
+        self.assertSetEqual(expected_comment_list,
+                            frozenset(self.index_creator.comment_list))
         self.assertTrue(os.path.isfile(f'{self.test_directory}/index.csv'),
                         'index.csv was not created')
         self.assertTrue(
