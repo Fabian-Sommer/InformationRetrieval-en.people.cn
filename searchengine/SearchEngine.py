@@ -10,7 +10,7 @@ import heapq
 import time
 from sys import argv
 
-import Report
+from Report import Report
 from Common import *
 import Huffman
 
@@ -27,11 +27,12 @@ class SearchEngine():
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
         self.using_compression = using_compression
+        self.report = Report()
 
     def load_index(self, directory):
         if self.using_compression:
-            with open(f'{directory}/compressed_seek_list.pickle', mode='rb')
-            as f:
+            with open(f'{directory}/compressed_seek_list.pickle', mode='rb') \
+                    as f:
                 self.seek_list = pickle.load(f)
             self.index_file = open(f'{directory}/compressed_index', mode='rb')
             with open(f'{directory}/huffman_tree.pickle', mode='rb') as f:
@@ -42,8 +43,8 @@ class SearchEngine():
             self.index_file = open(f'{directory}/index.csv',
                                    mode='r', encoding='utf-8')
 
-        with open(f'{directory}/comment_term_count_dict.pickle', mode='rb')
-        as f:
+        with open(f'{directory}/comment_term_count_dict.pickle', mode='rb') \
+                as f:
             self.comment_term_count_dict = pickle.load(f)
         with open(f'{directory}/collection_term_count.pickle', mode='rb') as f:
             self.collection_term_count = pickle.load(f)
@@ -81,8 +82,9 @@ class SearchEngine():
                     break
                 first_occurence = int(comment_list.partition(',')[0])
                 len_occurrences = comment_list.count(',') + 1
-                while comment_offsets_index < len(comment_offsets)
-                and first_occurence > comment_offsets[comment_offsets_index]:
+                while (comment_offsets_index < len(comment_offsets)
+                        and first_occurence >
+                        comment_offsets[comment_offsets_index]):
                     # term not found -> 0 occurences in comment
                     score_list[comment_offsets_index] += math.log(
                         (mu * query_term_count / self.collection_term_count)
@@ -90,8 +92,9 @@ class SearchEngine():
                             comment_offsets_index]] + mu))
                     comment_offsets_index += 1
 
-                if comment_offsets_index < len(comment_offsets)
-                and first_occurence == comment_offsets[comment_offsets_index]:
+                if(comment_offsets_index < len(comment_offsets)
+                        and first_occurence ==
+                        comment_offsets[comment_offsets_index]):
                     fD_query_term = len_occurrences - 1
                     score_list[comment_offsets_index] += math.log(
                         (fD_query_term + (mu * query_term_count
@@ -147,7 +150,7 @@ class SearchEngine():
     def get_comment_offsets_for_phrase_query(self, query):
         match = re.search(r'\'[^"]*\'', query)
         if not match:
-            Report.report('invalid phrase query')
+            self.report.report('invalid phrase query')
             exit()
         phrase = match.group()[1:-1]
         new_query = phrase.replace(' ', ' AND ')
@@ -255,19 +258,20 @@ class SearchEngine():
 
     def search(self, query, top_k=10):
 
-        Report.report('--------------------------------------------------')
-        Report.report(f'searching for "{query}":')
+        self.report.report('-------------------------------------------------')
+        self.report.report(f'searching for "{query}":')
 
         if self.is_boolean_query(query):
             comment_offsets = self.get_comment_offsets_for_query(query)
-            Report.report(f'{len(comment_offsets)} comments matched the query')
+            self.report.report(
+                f'{len(comment_offsets)} comments matched the query')
             if len(comment_offsets) > 0:
-                Report.report('example comment:')
+                self.report.report('example comment:')
                 random_index = random.randrange(0, len(comment_offsets))
                 example_comment = \
                     self.load_comment(comment_offsets[random_index])
-                Report.report(example_comment.text)
-            Report.report()
+                self.report.report(example_comment.text)
+            self.report.report()
             return
 
         if "'" not in query:
@@ -278,44 +282,45 @@ class SearchEngine():
             assert(query[0] == "'" == query[-1])
             query_terms = [query]
 
-        Report.begin('searching')
-        comment_offsets = self.get_comment_offsets_for_query(query)
-        Report.finish('searching')
+        with self.report.measure('searching'):
+            comment_offsets = self.get_comment_offsets_for_query(query)
 
         if len(comment_offsets) == 0:
-            Report.report('no comments matched the query')
+            self.report.report('no comments matched the query')
             return
-        Report.report(f'{len(comment_offsets)} comments matched the query')
+        self.report.report(
+            f'{len(comment_offsets)} comments matched the query')
 
-        Report.begin('calculating scores')
-        top_k_rated_comments = []  # min heap of tuples (score, comment_offset)
+        with self.report.measure('calculating scores'):
+            # min heap of tuples (score, comment_offset)
+            top_k_rated_comments = []
 
-        scores = self.get_dirichlet_smoothed_score(query_terms,
-                                                   comment_offsets)
-        for i, comment_offset in enumerate(comment_offsets):
-            score = scores[i]
-            if len(top_k_rated_comments) < top_k:
-                heapq.heappush(top_k_rated_comments, (score, comment_offset))
-            else:
-                heapq.heappushpop(top_k_rated_comments,
-                                  (score, comment_offset))
-        Report.finish('calculating scores')
+            scores = self.get_dirichlet_smoothed_score(query_terms,
+                                                       comment_offsets)
+            for i, comment_offset in enumerate(comment_offsets):
+                score = scores[i]
+                if len(top_k_rated_comments) < top_k:
+                    heapq.heappush(
+                        top_k_rated_comments, (score, comment_offset))
+                else:
+                    heapq.heappushpop(top_k_rated_comments,
+                                      (score, comment_offset))
 
-        Report.report('results:')
+        self.report.report('results:')
         top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
         for score, comment_offset in top_k_rated_comments:
-            Report.report(f'score: {score}, text:')
-            Report.report(f'{self.load_comment(comment_offset).text}\n')
+            self.report.report(f'score: {score}, text:')
+            self.report.report(f'{self.load_comment(comment_offset).text}\n')
 
-        Report.all_time_measures()
+        self.report.all_time_measures()
 
 
 if __name__ == '__main__':
     data_directory = 'data/fake' if len(argv) < 2 else argv[1]
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
-    Report.report('index loaded')
+    search_engine.report.report('index loaded')
 
-    queries = ['intern']
+    queries = ["european"]
     for query in queries:
         search_engine.search(query, 5)
