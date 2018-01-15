@@ -32,6 +32,7 @@ def process_comments_file(directory, start_offset, end_offset):
         stem = functools.lru_cache(None)(stemmer.stemWord)
 
         for csv_line in csv_reader:
+            previous_offset = f.tell()
             comment = Comment().init_from_csv_line(csv_line, previous_offset)
 
             comment_text_lower = comment.text.lower()
