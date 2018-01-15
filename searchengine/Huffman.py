@@ -41,8 +41,9 @@ class Node():
 
 # returns huffman_tree_root and symbol_to_encoding_dict
 def derive_encoding(symbol_to_frequency_dict):
-    symbol_to_encoding_dict = dict(
-        ((symbol, '') for symbol in symbol_to_frequency_dict.keys()))
+    assert(len(symbol_to_frequency_dict) > 0)
+    symbol_to_encoding_dict = \
+        dict(((symbol, '') for symbol in symbol_to_frequency_dict.keys()))
     heap = [Node().init_leaf(symbol, frequency)
             for symbol, frequency in symbol_to_frequency_dict.items()]
     heapq.heapify(heap)

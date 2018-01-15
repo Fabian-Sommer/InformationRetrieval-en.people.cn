@@ -161,10 +161,9 @@ class IndexCreator():
         # compress using Huffman encoding
 
         # count all occuring UTF-8 characters
+        symbol_to_frequency_dict = {}
         with self.report.measure('counting utf8 characters'):
-            symbol_to_frequency_dict = {}
-            with open(f'{self.directory}/index.csv',
-                      mode='r', encoding='utf-8') as index_file:
+            with open(f'{self.directory}/index.csv') as index_file:
                 chunk_size = 100000
 
                 def next_chunk_generator():
@@ -196,31 +195,30 @@ class IndexCreator():
                 pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
 
             self.compressed_seek_list = {}
-            with open(f'{self.directory}/index.csv',
-                      mode='r', encoding='utf-8') as index_file:
-                with open(f'{self.directory}/compressed_index', mode='wb') \
-                        as compressed_index_file:
-                    def read_line_generator():
+            with open(f'{self.directory}/index.csv') as index_file, \
+                open(f'{self.directory}/compressed_index', mode='wb') \
+                    as compressed_index_file:
+                def read_line_generator():
+                    orig_line = index_file.readline().rstrip('\n')
+                    while orig_line:
+                        yield orig_line
                         orig_line = index_file.readline().rstrip('\n')
-                        while orig_line:
-                            yield orig_line
-                            orig_line = index_file.readline().rstrip('\n')
 
-                    offset = 0
-                    for i, orig_line in enumerate(read_line_generator(), 1):
-                        term = next(csv.reader(io.StringIO(orig_line),
-                                    delimiter=':'))[0]
-                        line_without_term = orig_line[len(term) + 3:]
-                        encoded_line = Huffman.encode(
-                            line_without_term, symbol_to_encoding_dict)
-                        compressed_index_file.write(encoded_line)
+                offset = 0
+                for i, orig_line in enumerate(read_line_generator(), 1):
+                    term = next(csv.reader(io.StringIO(orig_line),
+                                delimiter=':'))[0]
+                    line_without_term = orig_line[len(term) + 3:]
+                    encoded_line = Huffman.encode(
+                        line_without_term, symbol_to_encoding_dict)
+                    compressed_index_file.write(encoded_line)
 
-                        self.compressed_seek_list[term] = \
-                            (offset, len(encoded_line))
+                    self.compressed_seek_list[term] = \
+                        (offset, len(encoded_line))
 
-                        self.report.progress(i, ' index lines compressed')
+                    self.report.progress(i, ' index lines compressed')
 
-                        offset += len(encoded_line)
+                    offset += len(encoded_line)
 
             with open(f'{self.directory}/compressed_seek_list.pickle',
                       mode='wb') as f:
@@ -233,17 +231,17 @@ if __name__ == '__main__':
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
     # index_creator.huffman_compression()
-    # with open(f'{data_directory}/huffman_tree.pickle', mode='rb') \
-    #         as huffman_tree_file:
-    #     with open(f'{data_directory}/compressed_index', mode='rb') \
-    #             as compressed_index_file:
-    #         with open(f'{data_directory}/compressed_seek_list.pickle',
-    #                   mode='rb') as compressed_seek_list_file:
-    #             huffman_tree_root = pickle.load(huffman_tree_file)
-    #             compressed_seek_list = pickle.load(compressed_seek_list_file)
-    #             offset, length = compressed_seek_list['xi']
-    #             compressed_index_file.seek(offset)
-    #             binary_data = compressed_index_file.read(length)
-    #             decoded_string = Huffman.decode(binary_data,
-    #                                             huffman_tree_root)
-    #             print(decoded_string)
+    # with open(f'{data_directory}/huffman_tree.pickle',
+    #           mode='rb') as huffman_tree_file, \
+    #         open(f'{data_directory}/compressed_index',
+    #              mode='rb') as compressed_index_file, \
+    #         open(f'{data_directory}/compressed_seek_list.pickle',
+    #              mode='rb') as compressed_seek_list_file:
+    #     huffman_tree_root = pickle.load(huffman_tree_file)
+    #     compressed_seek_list = pickle.load(compressed_seek_list_file)
+    #     offset, length = compressed_seek_list['xi']
+    #     compressed_index_file.seek(offset)
+    #     binary_data = compressed_index_file.read(length)
+    #     decoded_string = Huffman.decode(binary_data,
+    #                                     huffman_tree_root)
+    #     print(decoded_string)
