@@ -66,7 +66,7 @@ class IndexCreator():
             self.comment_list = []
 
             # number of usable CPUs
-            number_of_processes = len(os.sched_getaffinity(0))
+            number_of_processes = 4
             self.report.report(f'starting {number_of_processes} processes')
             csv_size = os.stat(f'{self.directory}/comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
@@ -170,7 +170,7 @@ class IndexCreator():
         # count all occuring UTF-8 characters
         symbol_to_frequency_dict = {}
         with self.report.measure('counting utf8 characters'):
-            with open(f'{self.directory}/index.csv') as index_file:
+            with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
                 chunk_size = 100000
 
                 def next_chunk_generator():
