@@ -18,26 +18,20 @@ from Report import Report
 from Common import *
 
 
-def process_comments_file(directory, number_of_processes,
-                          process_responsibility):
-    # start with line {process_responsibility} and
-    # process every {number_of_processes}th row
+def process_comments_file(directory, start_offset, end_offset):
+    assert(start_offset < end_offset)
+    # process data between the given offsets
     comment_list = []
     with open(f'{directory}/comments.csv', mode='rb') as f:
+        f.seek(start_offset)
+        previous_offset = start_offset
         csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
-        previous_offset = 0
 
         tokenizer = nltk.tokenize.ToktokTokenizer()
         stemmer = Stemmer.Stemmer('english')
         stem = functools.lru_cache(None)(stemmer.stemWord)
 
-        for i, csv_line in enumerate(csv_reader):
-            if i % number_of_processes != process_responsibility:
-                if (i % number_of_processes ==
-                        (process_responsibility - 1) % number_of_processes):
-                    previous_offset = f.tell()
-                continue
-
+        for csv_line in csv_reader:
             comment = Comment().init_from_csv_line(csv_line, previous_offset)
 
             comment_text_lower = comment.text.lower()
@@ -46,11 +40,13 @@ def process_comments_file(directory, number_of_processes,
                     comment.term_list.append(stem(token))
             comment_list.append(comment)
 
-            if process_responsibility == 0 and len(comment_list) % 5000 == 0:
-                print(f'{len(comment_list) * number_of_processes} comments '
-                      f'processed (estimated)')
+            if start_offset == 0 and len(comment_list) % 5000 == 0:
+                print(f'{f.tell() / end_offset:7.2%} processed (estimated)')
+            assert(f.tell() <= end_offset)
+            if f.tell() == end_offset:
+                break
 
-    with open(f'{directory}/comment_list_{process_responsibility}.pickle',
+    with open(f'{directory}/comment_list_{end_offset}.pickle',
               mode='wb') as f:
         pickle.dump(comment_list, f, pickle.HIGHEST_PROTOCOL)
 
@@ -72,17 +68,28 @@ class IndexCreator():
             # number of usable CPUs
             number_of_processes = len(os.sched_getaffinity(0))
             self.report.report(f'starting {number_of_processes} processes')
-
+            csv_size = os.stat(f'{self.directory}/comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
-                for i in range(number_of_processes):
+                offsets = [0]
+                with open(f'{self.directory}/comments.csv', mode='rb') as f:
+                    for i in range(1, number_of_processes + 1):
+                        f.seek(int(i * csv_size / number_of_processes))
+                        f.readline()
+                        next_offset = f.tell()
+                        if next_offset == offsets[-1]:
+                            continue
+                        offsets.append(next_offset)
+
+                for start_offset, end_offset in zip(offsets, offsets[1:]):
                     pool.apply_async(
                         process_comments_file,
-                        args=(self.directory, number_of_processes, i))
+                        args=(self.directory, start_offset, end_offset))
                 pool.close()
                 pool.join()
 
-            for i in range(number_of_processes):
-                file_path = f'{self.directory}/comment_list_{i}.pickle'
+            for end_offset in offsets[1:]:
+                file_path = \
+                    f'{self.directory}/comment_list_{end_offset}.pickle'
                 with open(file_path, mode='rb') as f:
                     self.comment_list += pickle.load(f)
                 os.remove(file_path)
