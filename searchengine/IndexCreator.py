@@ -32,7 +32,6 @@ def process_comments_file(directory, start_offset, end_offset):
         stem = functools.lru_cache(None)(stemmer.stemWord)
 
         for csv_line in csv_reader:
-            previous_offset = f.tell()
             comment = Comment().init_from_csv_line(csv_line, previous_offset)
 
             comment_text_lower = comment.text.lower()
@@ -41,11 +40,13 @@ def process_comments_file(directory, start_offset, end_offset):
                     comment.term_list.append(stem(token))
             comment_list.append(comment)
 
+            previous_offset = f.tell()
             if start_offset == 0 and len(comment_list) % 5000 == 0:
-                print(f'{f.tell() / end_offset:7.2%} processed (estimated)')
-            assert(f.tell() <= end_offset)
-            if f.tell() == end_offset:
+                print(f'about {previous_offset / end_offset:7.2%} processed')
+
+            if previous_offset == end_offset:
                 break
+            assert(previous_offset < end_offset)
 
     with open(f'{directory}/comment_list_{end_offset}.pickle',
               mode='wb') as f:
@@ -171,7 +172,7 @@ class IndexCreator():
         # count all occuring UTF-8 characters
         symbol_to_frequency_dict = {}
         with self.report.measure('counting utf8 characters'):
-            with open(f'{self.directory}/index.csv', mode='r', encoding='utf-8') as index_file:
+            with open(f'{self.directory}/index.csv') as index_file:
                 chunk_size = 100000
 
                 def next_chunk_generator():
