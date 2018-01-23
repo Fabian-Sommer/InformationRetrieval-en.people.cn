@@ -112,6 +112,23 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
         pickle.dump(collection_term_count, f, pickle.HIGHEST_PROTOCOL)
 
 
+def read_line_generator(file_path):
+    with open(file_path) as target_file:
+        line = target_file.readline().rstrip('\n')
+        while line:
+            yield line
+            line = target_file.readline().rstrip('\n')
+
+
+def create_list_from_csv(csv_file_path):
+    result_list = []
+    for line_number, line in enumerate(read_line_generator(csv_file_path)):
+        parts = line.partition(',')
+        assert(line_number == 0 or str(line_number) == parts[0])
+        result_list.append(parts[2])
+    return result_list
+
+
 class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
@@ -291,7 +308,17 @@ class IndexCreator():
         if compress_index:
             self.huffman_compression()
 
-        self.report.all_time_measures()
+        with self.report.measure('processing authors & articles'):
+            with open(f'{self.directory}/authors_list.pickle', mode='wb') as f:
+                pickle.dump(
+                    create_list_from_csv(f'{self.directory}/authors.csv'),
+                    f, pickle.HIGHEST_PROTOCOL)
+
+            with open(f'{self.directory}/articles_list.pickle', mode='wb') \
+                    as f:
+                pickle.dump(
+                    create_list_from_csv(f'{self.directory}/articles.csv'),
+                    f, pickle.HIGHEST_PROTOCOL)
 
     def huffman_compression(self):
         # compress using Huffman encoding
@@ -331,18 +358,11 @@ class IndexCreator():
                 pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
 
             self.compressed_seek_list = {}
-            with open(f'{self.directory}/index.csv', mode='rb') \
-                    as index_file, \
-                    open(f'{self.directory}/compressed_index', mode='wb') \
+            with open(f'{self.directory}/compressed_index', mode='wb') \
                     as compressed_index_file:
-                def read_line_generator():
-                    orig_line = index_file.readline().decode().rstrip('\n')
-                    while orig_line:
-                        yield orig_line
-                        orig_line = index_file.readline().decode().rstrip('\n')
-
                 offset = 0
-                for i, orig_line in enumerate(read_line_generator(), 1):
+                for i, orig_line in enumerate(
+                        read_line_generator(f'{self.directory}/index.csv'), 1):
                     term = next(csv.reader(io.StringIO(orig_line),
                                 delimiter=posting_list_separator))[0]
                     line_without_term = orig_line[len(term) + 3:]
@@ -361,7 +381,6 @@ class IndexCreator():
                       mode='wb') as f:
                 pickle.dump(
                     self.compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
-        self.report.all_time_measures()
 
 
 if __name__ == '__main__':
@@ -383,3 +402,4 @@ if __name__ == '__main__':
     #     decoded_string = Huffman.decode(binary_data,
     #                                     huffman_tree_root)
     #     print(decoded_string)
+    index_creator.report.all_time_measures()

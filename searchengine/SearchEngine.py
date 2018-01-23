@@ -24,6 +24,8 @@ class SearchEngine():
         self.huffman_tree_root = None
         self.comment_csv_reader = None
         self.comment_term_count_dict = None
+        self.authors_list = None
+        self.articles_list = None
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
         self.using_compression = using_compression
@@ -51,6 +53,10 @@ class SearchEngine():
         self.comment_file = open(f'{directory}/comments.csv', mode='rb')
         self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file),
                                              quoting=csv.QUOTE_ALL)
+        with open(f'{directory}/authors_list.pickle', mode='rb') as f:
+            self.authors_list = pickle.load(f)
+        with open(f'{directory}/articles_list.pickle', mode='rb') as f:
+            self.articles_list = pickle.load(f)
 
     def load_posting_list_parts(self, stem):
         if self.using_compression:
@@ -118,16 +124,14 @@ class SearchEngine():
         comment_as_list = next(self.comment_csv_reader)
         comment = Comment()
         comment.cid = int(comment_as_list[0])
-        comment.url = comment_as_list[1]
-        comment.author = comment_as_list[2]
-        comment.time = comment_as_list[3]
-        if comment_as_list[4] == 'None':
-            comment.parent = None
-        else:
-            comment.parent = int(comment_as_list[4])
-        comment.likes = int(comment_as_list[5])
-        comment.dislikes = int(comment_as_list[6])
-        comment.text = comment_as_list[7]
+        comment.article_url = self.articles_list[int(comment_as_list[1])]
+        comment.author = self.authors_list[int(comment_as_list[2])]
+        comment.text = comment_as_list[3]
+        comment.timestamp = comment_as_list[4]
+        comment.parent_cid = int(comment_as_list[5])
+        comment.upvotes = int(comment_as_list[6])
+        comment.downvotes = int(comment_as_list[7])
+
         return comment
 
     # returns offsets into comment file for all comments containing stem in
@@ -321,6 +325,7 @@ if __name__ == '__main__':
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
 
-    queries = ["european"]
-    for query in queries:
-        search_engine.search(query, 5)
+    print(search_engine.load_comment(0))
+    # queries = ["european"]
+    # for query in queries:
+    #     search_engine.search(query, 5)
