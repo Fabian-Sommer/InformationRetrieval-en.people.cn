@@ -59,11 +59,11 @@ class SearchEngine():
             binary_data = self.index_file.read(size)
             decoded_posting_list = Huffman.decode(
                 binary_data, self.huffman_tree_root)
-            return [stem] + decoded_posting_list.split(':')
+            return [stem] + decoded_posting_list.split(posting_list_separator)
         else:
             self.index_file.seek(self.seek_list[stem])
             posting_list = self.index_file.readline().rstrip('\n')
-            return posting_list.split(':')
+            return posting_list.split(posting_list_separator)
 
     # returns score based on natural language model with dirichlet smoothing
     # query_terms: list of query terms, stemmed and filtered

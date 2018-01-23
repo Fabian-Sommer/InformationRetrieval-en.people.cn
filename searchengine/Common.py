@@ -1,5 +1,6 @@
 import csv
 
+posting_list_separator = '\a' #
 
 class Comment():
 
