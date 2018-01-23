@@ -7,13 +7,14 @@ import os
 import functools
 import sys
 import multiprocessing
+import csv
 
 import Stemmer
 import nltk.tokenize
 
 import Huffman
 from Report import Report
-from Common import *
+from Common import CSVInputFile, Comment, posting_list_separator
 
 
 def process_comments_file(directory, start_offset, end_offset,

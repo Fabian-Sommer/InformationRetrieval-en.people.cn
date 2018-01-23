@@ -1,0 +1,19 @@
+Dear students,
+
+Benedikt has a good remark: Please sort also the other two csv files by id (article id or comment author id). It might be helpful for your optimization and it is not much extra effort. If you use fixed length records in your internal data structures, you might want to know the maximum length of comment author names or article URLs. However, we will not fix these numbers in advance. You could check this at runtime.
+
+> can we consider that each file is sorted by the id? (article id, article url -> sorted by arcticle id; comment author id, comment author -> sorted by author id)
+
+>> after yesterday’s exercise, here is the updated description of the expected data format.
+>>
+>> CSV Files
+>> We decided to decompose the current csv file into multiple files: the first file contains only article ids and article URLs. The second file contains comment author ids and comment authors. The third file contains all comment data except that the article URLs and the comment authors are replaced by corresponding ids. Assume a 4 byte number for each id. Sort the comment data by article id. The three csv files should have this format:
+>>
+>>     article id, article url
+>>     comment author id, comment author
+>>     comment id, article id, comment author id, comment text, timestamp, parent comment id, upvotes, downvotes
+>>
+>> Stemming and Prefix/Wild card queries
+>> One assumption you can make for your search engine is that the prefix itself (in the prefix query) is a stem or only a part of a stem. It is not mandatory to implement any more complex approaches
+>> For your information, one way to optimize prefix/wild card queries is described here: https://www.elastic.co/guide/en/elasticsearch/guide/current/_ngrams_for_partial_matching.html. You do not need to consider this optimization for your search engine. How a search engine could combine stemming and wild cards in one query is described here: https://my.vertica.com/docs/IDOL_11_5/IDOLServer/Guides/html/English/expert/Content/IDOLExpert/Inquire/Wildcard_Search.htm
+
