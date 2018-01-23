@@ -23,7 +23,7 @@ def process_comments_file(directory, start_offset, end_offset, comments_per_outp
     # process data between the given offsets
     comment_list = []
     file_number = 0
-    with open(f'{directory}/comments.csv', mode='rb') as f:
+    with open(f'{directory}/sorted_comments.csv', mode='rb') as f:
         f.seek(start_offset)
         previous_offset = start_offset
         csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
@@ -33,14 +33,12 @@ def process_comments_file(directory, start_offset, end_offset, comments_per_outp
         stem = functools.lru_cache(None)(stemmer.stemWord)
 
         for csv_line in csv_reader:
-
-            
-            comment = Comment().init_from_csv_line(csv_line, previous_offset)
+            comment = [previous_offset,[]]
             previous_offset = f.tell()
-            comment_text_lower = comment.text.lower()
+            comment_text_lower = csv_line[3].lower()
             for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
                 for token in tokenizer.tokenize(sentence):
-                    comment.term_list.append(stem(token))
+                    comment[1].append(stem(token))
             comment_list.append(comment)
             if len(comment_list) == comments_per_output_file or f.tell() == end_offset:
                 write_comments_to_temp_file(comment_list, f'{directory}/{end_offset}_{file_number}')
@@ -64,9 +62,9 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
     for comment in comment_list:
         
         comment_dict = {}
-        comment_term_count_dict[comment.file_offset] = \
-            len(comment.term_list)
-        for position, stem in enumerate(comment.term_list):
+        comment_term_count_dict[comment[0]] = \
+            len(comment[1])
+        for position, stem in enumerate(comment[1]):
             if stem not in comment_dict.keys():
                 comment_dict[stem] = [position]
             else:
@@ -75,11 +73,11 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
             # positions = list of token pos in comment
             if stem not in all_comment_dict.keys():
                 all_comment_dict[stem] = \
-                    [(comment.file_offset, positions)]
+                    [(comment[0], positions)]
                 term_count_dict[stem] = len(positions)
             else:
                 all_comment_dict[stem].append(
-                    (comment.file_offset, positions))
+                    (comment[0], positions))
                 term_count_dict[stem] += len(positions)
     collection_term_count = \
         sum(comment_term_count_dict.values())
@@ -90,9 +88,7 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
             escaped_stem = stem.replace('"', '""')
             line_string = f'"{escaped_stem}"{posting_list_separator}{term_count_dict[stem]}'
             for posting_list_part in sorted(posting_list):
-                # posting_list_part[0] = comment.file_offset
                 line_string += f'{posting_list_separator}{posting_list_part[0]},'
-                # posting_list_part[1] =
                 # list of token positions in comment
                 line_string += ','.join(
                     (str(i) for i in posting_list_part[1]))
@@ -114,24 +110,29 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
 class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
-        assert(os.path.isfile(f'{self.directory}/comments.csv'))
+        assert(os.path.isfile(f'{self.directory}/sorted_comments.csv'))
         sys.setrecursionlimit(10000)
         self.report = Report(
             quiet_mode=__name__ != '__main__',
             log_file_path=f'{directory}/log_IndexCreator.py.csv')
 
-    def create_index(self, compress_index=True):
+    def create_index(self, skip_first_line=True, compress_index=True):
         # read csv to create comment_list
-        with self.report.measure('processing comments.csv'):
-            self.comment_list = []
+        
+        with self.report.measure('processing sorted_comments.csv'):
 
             # number of usable CPUs
             number_of_processes = 4
             self.report.report(f'starting {number_of_processes} processes')
-            csv_size = os.stat(f'{self.directory}/comments.csv').st_size
+            csv_size = os.stat(f'{self.directory}/sorted_comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
-                offsets = [0]
-                with open(f'{self.directory}/comments.csv', mode='rb') as f:
+                offsets = []
+                with open(f'{self.directory}/sorted_comments.csv', mode='rb') as f:
+                    if skip_first_line:
+                        f.readline()
+                        offsets.append(f.tell())
+                    else:
+                        offsets.append(0)
                     for i in range(1, number_of_processes + 1):
                         f.seek(int(i * csv_size / number_of_processes))
                         f.readline()
@@ -162,7 +163,6 @@ class IndexCreator():
 
         # merge indizes
         with self.report.measure('merging index'):
-
             # comment term counts
             self.comment_term_count_dict = {}
             for file_prefix in self.partial_index_names:
@@ -188,7 +188,7 @@ class IndexCreator():
                       mode='wb') as f:
                 pickle.dump(self.collection_term_count,
                             f, pickle.HIGHEST_PROTOCOL)
-
+            
             # index
             index_files = []
             for file_prefix in self.partial_index_names:
@@ -200,20 +200,20 @@ class IndexCreator():
             current_posting_lists = []
             global_active_indizes = []
             global_active_file_count = 0
+
             for file in index_files:
-                line = file.readline().decode('utf-8').rstrip('\n').split(posting_list_separator)
-                #print(line.count('\a'))
-                #line = line
+                line = file.readline().decode('utf-8').rstrip('\n').split(posting_list_separator, 2)
                 current_terms.append(line[0])
                 current_meta.append(int(line[1]))
-                current_posting_lists.append(line[2:])
+                current_posting_lists.append(line[2])
                 global_active_indizes.append(True)
                 global_active_file_count += 1
 
             current_active_indizes = []
             current_min_term = None
-            self.seek_list = PrefixDict()
+            self.seek_list = []
             current_offset = 0
+            terms_done = 0
 
             with open(f'{self.directory}/index.csv', mode='wb') as f:
                 while global_active_file_count > 0:
@@ -228,25 +228,24 @@ class IndexCreator():
                             current_active_indizes.append(key)
                     
                     # merge all lines containing term
-                    meta = 0
-                    posting_list = []
-                    for key in current_active_indizes:
-                        meta += current_meta[key]
-                        for posting_string in current_posting_lists[key]:
-                            split_posting_string = posting_string.split(',', 1)
-                            posting_list.append([int(split_posting_string[0]), split_posting_string[1]])
 
-                    line_string = f'{current_min_term}{posting_list_separator}{meta}'
+                    if len(current_min_term) <= 128:
 
-                    for posting_list_part in sorted(posting_list):
-                        line_string += f'{posting_list_separator}{posting_list_part[0]},{posting_list_part[1]}'
+                        meta = 0
+                        for key in current_active_indizes:
+                            meta += current_meta[key]
+                            
 
-                    line_string += '\n'
-                    line_raw = line_string.encode()
-                    f.write(line_raw)
-                    self.seek_list[current_min_term[1:-1].replace('""', '"')] = current_offset
-                    current_offset += len(line_raw)
-
+                        line_string = f'{current_min_term}{posting_list_separator}{meta}'
+                        for key in current_active_indizes:
+                            line_string += f'{posting_list_separator}{current_posting_lists[key]}'
+                            
+                        line_string += '\n'
+                        line_raw = line_string.encode()
+                        f.write(line_raw)
+                        self.seek_list.append([current_min_term[1:-1].replace('""', '"'), current_offset])
+                        current_offset += len(line_raw)
+                        
                     # reload lines where necessary
                     for key in current_active_indizes:
                         linetest = index_files[key].readline().decode('utf-8')
@@ -254,14 +253,18 @@ class IndexCreator():
                             # end of file
                             global_active_indizes[key] = False
                             global_active_file_count -= 1
+                            print(f'one file out, {global_active_file_count} remaining')
                         else:
-                            line = linetest.rstrip('\n').split(posting_list_separator)
+                            line = linetest.rstrip('\n').split(posting_list_separator, 2)
                             current_terms[key] = line[0]
                             current_meta[key] = int(line[1])
-                            current_posting_lists[key] = line[2:]
-
+                            current_posting_lists[key] = line[2]
+                    
                     current_min_term = None
                     current_active_indizes = []
+                    terms_done += 1
+                    if terms_done % 100000 == 0:
+                        print(f'Merged {terms_done} terms.')
 
             # seek list
             with open(f'{self.directory}/seek_list.pickle', mode='wb') as f:
@@ -349,13 +352,14 @@ class IndexCreator():
                       mode='wb') as f:
                 pickle.dump(
                     self.compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
+        self.report.all_time_measures()
 
 
 if __name__ == '__main__':
     data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
     index_creator = IndexCreator(data_directory)
-    index_creator.create_index()
-    # index_creator.huffman_compression()
+    #index_creator.create_index()
+    index_creator.huffman_compression()
     # with open(f'{data_directory}/huffman_tree.pickle',
     #           mode='rb') as huffman_tree_file, \
     #         open(f'{data_directory}/compressed_index',
