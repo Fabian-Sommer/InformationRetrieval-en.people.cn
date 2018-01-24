@@ -23,6 +23,8 @@ def process_comments_file(directory, start_offset, end_offset,
     # process data between the given offsets
     comment_list = []
     file_number = 0
+    reply_to_index = {}
+    cid_to_offset = {}
     with open(f'{directory}/sorted_comments.csv', mode='rb') as f:
         f.seek(start_offset)
         previous_offset = start_offset
@@ -30,19 +32,34 @@ def process_comments_file(directory, start_offset, end_offset,
 
         tokenizer = nltk.tokenize.ToktokTokenizer()
         stemmer = Stemmer.Stemmer('english')
-        stem = functools.lru_cache(None)(stemmer.stemWord)
+        stem = functools.lru_cache(None)(stemmer.stemWord)  # TODO remove?
 
         for csv_line in csv_reader:
+            # if(len(csv_line) != 8):
+            #     # TODO clean data...
+            #     print(f'WARNING: len(csv_line) == {len(csv_line)} != 8')
+            cid = int(csv_line[0])
+            assert(cid not in cid_to_offset.keys())
+            cid_to_offset[cid] = previous_offset
+
             comment = (previous_offset, [])
-            previous_offset = f.tell()
             comment_text_lower = csv_line[3].lower()
             for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
                 for token in tokenizer.tokenize(sentence):
                     comment[1].append(stem(token))
             comment_list.append(comment)
 
+            # TODO should be this: parent_cid = int(csv_line[5])
+            # this is a hack to get parent_cid from malformed comment text
+            parent_cid = int(csv_line[-3])
+            if parent_cid != -1:
+                if parent_cid not in reply_to_index.keys():
+                    reply_to_index[parent_cid] = [cid]
+                else:
+                    reply_to_index[parent_cid].append(cid)
+
             previous_offset = f.tell()
-            if start_offset == 0 and len(comment_list) % 5000 == 0:
+            if start_offset == 0 and len(comment_list) % 5000 == 0:  # TODO fix
                 print(f'about {previous_offset / end_offset:7.2%} processed')
 
             if len(comment_list) == comments_per_output_file \
@@ -58,6 +75,14 @@ def process_comments_file(directory, start_offset, end_offset,
     with open(f'{directory}/{end_offset}_file_number.pickle', mode='wb') as f:
         pickle.dump(file_number, f, pickle.HIGHEST_PROTOCOL)
 
+    with open(f'{directory}/{end_offset}_reply_to_index.pickle', mode='wb') \
+            as f:
+        pickle.dump(reply_to_index, f, pickle.HIGHEST_PROTOCOL)
+
+    with open(f'{directory}/{end_offset}_cid_to_offset.pickle', mode='wb') \
+            as f:
+        pickle.dump(cid_to_offset, f, pickle.HIGHEST_PROTOCOL)
+
 
 def write_comments_to_temp_file(comment_list, file_name_prefix):
     print(f'writing {file_name_prefix}')
@@ -65,10 +90,8 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
     term_count_dict = {}
     comment_term_count_dict = {}
     for comment in comment_list:
-
         comment_dict = {}
-        comment_term_count_dict[comment[0]] = \
-            len(comment[1])
+        comment_term_count_dict[comment[0]] = len(comment[1])
         for position, stem in enumerate(comment[1]):
             if stem not in comment_dict.keys():
                 comment_dict[stem] = [position]
@@ -77,15 +100,12 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
         for stem, positions in comment_dict.items():
             # positions = list of token pos in comment
             if stem not in all_comment_dict.keys():
-                all_comment_dict[stem] = \
-                    [(comment[0], positions)]
+                all_comment_dict[stem] = [(comment[0], positions)]
                 term_count_dict[stem] = len(positions)
             else:
-                all_comment_dict[stem].append(
-                    (comment[0], positions))
+                all_comment_dict[stem].append((comment[0], positions))
                 term_count_dict[stem] += len(positions)
-    collection_term_count = \
-        sum(comment_term_count_dict.values())
+    collection_term_count = sum(comment_term_count_dict.values())
 
     with open(f'{file_name_prefix}_index.csv', mode='wb') as f:
         for stem in sorted(all_comment_dict.keys()):
@@ -171,18 +191,40 @@ class IndexCreator():
                 pool.join()
 
             self.partial_index_names = []
+            reply_to_index = {}
+            cid_to_offset = {}
             for end_offset in offsets[1:]:
-                file_path = \
+                file_number_path = \
                     f'{self.directory}/{end_offset}_file_number.pickle'
-                with open(file_path, mode='rb') as f:
+                with open(file_number_path, mode='rb') as f:
                     file_number = pickle.load(f)
                     for i in range(file_number):
                         self.partial_index_names.append(
                             f'{self.directory}/{end_offset}_{i}')
-                os.remove(file_path)
+                os.remove(file_number_path)
 
-            self.report.report(
-                f'processed all comments')
+                reply_to_index_part_path = f'{self.directory}/' \
+                    f'{end_offset}_reply_to_index.pickle'
+                with open(reply_to_index_part_path, 'rb') as f:
+                    reply_to_index_part = pickle.load(f)
+                    for key, value in reply_to_index_part.items():
+                        if key not in reply_to_index.keys():
+                            reply_to_index[key] = value
+                        else:
+                            reply_to_index[key].extend(value)
+                os.remove(reply_to_index_part_path)
+
+                cid_to_offset_part_path = f'{self.directory}/' \
+                    f'{end_offset}_cid_to_offset.pickle'
+                with open(cid_to_offset_part_path, 'rb') as f:
+                    cid_to_offset_part = pickle.load(f)
+                    cid_to_offset.update(cid_to_offset_part)
+                os.remove(cid_to_offset_part_path)
+
+            with open(f'{self.directory}/reply_to_index.pickle', 'wb') as f:
+                pickle.dump(reply_to_index, f, pickle.HIGHEST_PROTOCOL)
+            with open(f'{self.directory}/cid_to_offset.pickle', 'wb') as f:
+                pickle.dump(cid_to_offset, f, pickle.HIGHEST_PROTOCOL)
 
         # merge indices
         with self.report.measure('merging index'):

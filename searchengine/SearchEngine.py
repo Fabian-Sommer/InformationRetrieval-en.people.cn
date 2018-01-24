@@ -26,6 +26,8 @@ class SearchEngine():
         self.comment_term_count_dict = None
         self.authors_list = None
         self.articles_list = None
+        self.reply_to_index = None
+        self.cid_to_offset = None
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
         self.using_compression = using_compression
@@ -57,6 +59,10 @@ class SearchEngine():
             self.authors_list = pickle.load(f)
         with open(f'{directory}/articles_list.pickle', mode='rb') as f:
             self.articles_list = pickle.load(f)
+        with open(f'{directory}/reply_to_index.pickle', mode='rb') as f:
+            self.reply_to_index = pickle.load(f)
+        with open(f'{directory}/cid_to_offset.pickle', mode='rb') as f:
+            self.cid_to_offset = pickle.load(f)
 
     def load_posting_list_parts(self, stem):
         if self.using_compression:
@@ -133,6 +139,9 @@ class SearchEngine():
         comment.downvotes = int(comment_as_list[7])
 
         return comment
+
+    def load_comment_from_cid(self, cid):
+        return self.load_comment(self.cid_to_offset[cid])
 
     # returns offsets into comment file for all comments containing stem in
     # ascending order
@@ -278,6 +287,18 @@ class SearchEngine():
             self.report.report()
             return
 
+        if query[:8] == "ReplyTo:":
+            target_cid = int(query[8:])
+            self.report.report("target comment:",
+                               self.load_comment_from_cid(target_cid),
+                               '\nreplies to that comment:')
+
+            for i, cid in enumerate(self.reply_to_index[target_cid]):
+                if i == top_k:
+                    break
+                self.report.report(self.load_comment_from_cid(cid))
+            return
+
         if "'" not in query:
             query = query.replace(' ', ' OR ')
             query_terms = [self.stemmer.stemWord(term.lower())
@@ -325,7 +346,6 @@ if __name__ == '__main__':
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
 
-    print(search_engine.load_comment(0))
-    # queries = ["european"]
-    # for query in queries:
-    #     search_engine.search(query, 5)
+    queries = ["ReplyTo:88784", "ReplyTo:88776", "ReplyTo:88789"]
+    for query in queries:
+        search_engine.search(query, 5)
