@@ -46,6 +46,28 @@ def read_line_generator(target_file):
         yield line
         line = target_file.readline().rstrip('\n')
 
+
+def fix_csv(csv_file_path):
+    with open(csv_file_path, newline='') as csv_file, \
+            open(f'{csv_file_path}.fixed', 'w', newline='') as csv_output_file:
+        csv_writer = csv.writer(csv_output_file)
+        for line in read_line_generator(csv_file):
+            csv_writer.writerow(line[1:-1].split('","'))
+
+
+def check_comment_parsing(csv_file_path, number_of_fields=8):
+    number_of_violating_comments = 0
+    total = 0
+    with open(csv_file_path, newline='') as csv_file:
+        for csv_line in csv.reader(read_line_generator(csv_file)):
+            total += 1
+            if len(csv_line) != number_of_fields:
+                if number_of_violating_comments < 3:
+                    print(csv_line, '\n\n')
+                number_of_violating_comments += 1
+    print(f'{number_of_violating_comments}/{total}')
+
+
 # not used at the moment
 # def set_cid_to_offset(comments_csv_path):
 #     assert(comments_csv_path[-4:] == '.csv')
@@ -63,3 +85,5 @@ if __name__ == '__main__':
     # replace_chinese_punctuation(sys.argv[1])
     # replace_newlines(sys.argv[1])
     # set_cid_to_offset(sys.argv[1])
+    # fix_csv(sys.argv[1])
+    # check_comment_parsing(sys.argv[1])

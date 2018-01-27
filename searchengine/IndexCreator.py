@@ -35,9 +35,9 @@ def process_comments_file(directory, start_offset, end_offset,
         stem = functools.lru_cache(None)(stemmer.stemWord)  # TODO remove?
 
         for csv_line in csv_reader:
-            # if(len(csv_line) != 8):
-            #     # TODO clean data...
-            #     print(f'WARNING: len(csv_line) == {len(csv_line)} != 8')
+            if(not 6 <= len(csv_line) <= 8):
+                print(f'WARNING: len(csv_line) == {len(csv_line)}',
+                      'which is not between 6 and 8')
             cid = int(csv_line[0])
             assert(cid not in cid_to_offset.keys())
             cid_to_offset[cid] = previous_offset
@@ -49,9 +49,7 @@ def process_comments_file(directory, start_offset, end_offset,
                     comment[1].append(stem(token))
             comment_list.append(comment)
 
-            # TODO should be this: parent_cid = int(csv_line[5])
-            # this is a hack to get parent_cid from malformed comment text
-            parent_cid = int(csv_line[-3])
+            parent_cid = int(csv_line[5])
             if parent_cid != -1:
                 if parent_cid not in reply_to_index.keys():
                     reply_to_index[parent_cid] = [cid]
