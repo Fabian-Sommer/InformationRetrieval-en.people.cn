@@ -53,8 +53,8 @@ class SearchEngine():
         with open(f'{directory}/collection_term_count.pickle', mode='rb') as f:
             self.collection_term_count = pickle.load(f)
         self.comment_file = open(f'{directory}/comments.csv', mode='rb')
-        self.comment_csv_reader = csv.reader(CSVInputFile(self.comment_file),
-                                             quoting=csv.QUOTE_ALL)
+        self.comment_csv_reader = csv.reader(
+            binary_read_line_generator(self.comment_file))
         with open(f'{directory}/authors_list.pickle', mode='rb') as f:
             self.authors_list = pickle.load(f)
         with open(f'{directory}/articles_list.pickle', mode='rb') as f:
@@ -153,6 +153,7 @@ class SearchEngine():
 
     # returns offsets into comment file for all comments containing stem
     # starting with prefix
+    # TODO implement without prefix tree...
     def get_offsets_for_prefix(self, prefix):
         stems = self.seek_list.startswith(prefix)
         result = []
@@ -346,6 +347,6 @@ if __name__ == '__main__':
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
 
-    queries = ["ReplyTo:88784", "ReplyTo:88776", "ReplyTo:88789"]
+    queries = ["trump"]
     for query in queries:
         search_engine.search(query, 5)

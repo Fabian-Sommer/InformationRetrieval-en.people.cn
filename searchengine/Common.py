@@ -47,23 +47,18 @@ class Comment():
         return self.cid
 
 
-class CSVInputFile(object):
-    """ File-like object. """
-    def __init__(self, csv_file):
-        self.csv_file = csv_file
-        self.offset = None
-        self.linelen = None
+def read_line_generator(file_path):
+    with open(file_path) as target_file:
+        line = target_file.readline().rstrip('\n')
+        while line:
+            yield line
+            line = target_file.readline().rstrip('\n')
 
-    def __iter__(self):
-        return self
 
-    def __next__(self):
-        offset = self.csv_file.tell()
-        data = self.csv_file.readline()
-        if not data:
-            raise StopIteration
-        self.offset = offset
-        self.linelen = len(data)
-        return data.decode()
-
-    next = __next__
+def binary_read_line_generator(target_file):
+    # use for files opened in binary mode
+    # (maybe to first seek to offset and read from there)
+    line = target_file.readline().decode().rstrip('\n')
+    while line:
+        yield line
+        line = target_file.readline().decode().rstrip('\n')

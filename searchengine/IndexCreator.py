@@ -14,7 +14,7 @@ import nltk.tokenize
 
 import Huffman
 from Report import Report
-from Common import CSVInputFile, Comment, posting_list_separator
+from Common import *
 
 
 def process_comments_file(directory, start_offset, end_offset,
@@ -25,10 +25,10 @@ def process_comments_file(directory, start_offset, end_offset,
     file_number = 0
     reply_to_index = {}
     cid_to_offset = {}
-    with open(f'{directory}/sorted_comments.csv', mode='rb') as f:
+    with open(f'{directory}/comments.csv', mode='rb') as f:
         f.seek(start_offset)
         previous_offset = start_offset
-        csv_reader = csv.reader(CSVInputFile(f), quoting=csv.QUOTE_ALL)
+        csv_reader = csv.reader(binary_read_line_generator(f))
 
         tokenizer = nltk.tokenize.ToktokTokenizer()
         stemmer = Stemmer.Stemmer('english')
@@ -130,14 +130,6 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
         pickle.dump(collection_term_count, f, pickle.HIGHEST_PROTOCOL)
 
 
-def read_line_generator(file_path):
-    with open(file_path) as target_file:
-        line = target_file.readline().rstrip('\n')
-        while line:
-            yield line
-            line = target_file.readline().rstrip('\n')
-
-
 def create_list_from_csv(csv_file_path):
     result_list = []
     for line_number, line in enumerate(read_line_generator(csv_file_path)):
@@ -150,7 +142,7 @@ def create_list_from_csv(csv_file_path):
 class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
-        assert(os.path.isfile(f'{self.directory}/sorted_comments.csv'))
+        assert(os.path.isfile(f'{self.directory}/comments.csv'))
         sys.setrecursionlimit(10000)
         self.report = Report(
             quiet_mode=__name__ != '__main__',
@@ -159,13 +151,13 @@ class IndexCreator():
     def create_index(self, skip_first_line=True, compress_index=True):
         # read csv to create comment_list
 
-        with self.report.measure('processing sorted_comments.csv'):
+        with self.report.measure('processing comments.csv'):
             number_of_processes = os.cpu_count()
             self.report.report(f'starting {number_of_processes} processes')
-            csv_size = os.stat(f'{self.directory}/sorted_comments.csv').st_size
+            csv_size = os.stat(f'{self.directory}/comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
                 offsets = []
-                with open(f'{self.directory}/sorted_comments.csv', mode='rb') \
+                with open(f'{self.directory}/comments.csv', mode='rb') \
                         as f:
                     if skip_first_line:
                         f.readline()
@@ -203,7 +195,7 @@ class IndexCreator():
 
                 reply_to_index_part_path = f'{self.directory}/' \
                     f'{end_offset}_reply_to_index.pickle'
-                with open(reply_to_index_part_path, 'rb') as f:
+                with open(reply_to_index_part_path, mode='rb') as f:
                     reply_to_index_part = pickle.load(f)
                     for key, value in reply_to_index_part.items():
                         if key not in reply_to_index.keys():
@@ -214,14 +206,16 @@ class IndexCreator():
 
                 cid_to_offset_part_path = f'{self.directory}/' \
                     f'{end_offset}_cid_to_offset.pickle'
-                with open(cid_to_offset_part_path, 'rb') as f:
+                with open(cid_to_offset_part_path, mode='rb') as f:
                     cid_to_offset_part = pickle.load(f)
                     cid_to_offset.update(cid_to_offset_part)
                 os.remove(cid_to_offset_part_path)
 
-            with open(f'{self.directory}/reply_to_index.pickle', 'wb') as f:
+            with open(f'{self.directory}/reply_to_index.pickle',
+                      mode='wb') as f:
                 pickle.dump(reply_to_index, f, pickle.HIGHEST_PROTOCOL)
-            with open(f'{self.directory}/cid_to_offset.pickle', 'wb') as f:
+            with open(f'{self.directory}/cid_to_offset.pickle',
+                      mode='wb') as f:
                 pickle.dump(cid_to_offset, f, pickle.HIGHEST_PROTOCOL)
 
         # merge indices
