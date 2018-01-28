@@ -135,7 +135,7 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
 
 def create_list_from_csv(csv_file_path):
     result_list = []
-    for line_number, line in enumerate(read_line_generator(csv_file_path)):
+    for line_number, line in enumerate(binary_read_line_generator_path(csv_file_path)):
         parts = line.partition(',')
         assert(line_number == 0 or str(line_number) == parts[0])
         result_list.append(parts[2])
@@ -341,7 +341,7 @@ class IndexCreator():
                 os.remove(file_path)
 
         if compress_index:
-            self.huffman_compression()
+            self.huffman_compression(generate_encoding = True)
 
         with self.report.measure('processing authors & articles'):
             with open(f'{self.directory}/authors_list.pickle', mode='wb') as f:
@@ -389,8 +389,9 @@ class IndexCreator():
             with self.report.measure('deriving huffman encoding'):
                 huffman_tree_root, symbol_to_encoding_dict = \
                     Huffman.derive_encoding(symbol_to_frequency_dict)
-            for key, value in symbol_to_encoding_dict:
-                symbol_to_encoding_list[oct(key)] = value
+            for key, value in symbol_to_encoding_dict.items():
+                assert(len(key) == 1)
+                symbol_to_encoding_list[ord(key[0])] = value
             with open(f'{self.directory}/huffman_tree.pickle', mode='wb') as f:
                 pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
         else:
