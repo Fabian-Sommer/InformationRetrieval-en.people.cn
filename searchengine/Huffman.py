@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import bitstring
+from bitarray import bitarray
 import heapq
+import time
 
 
 class Node():
@@ -64,15 +66,15 @@ def derive_encoding(symbol_to_frequency_dict):
 
 # returns bytes, leading 1s and first 0 are padding:
 # 11110011 -> 11110 = padding, 011 = data
-def encode(string, symbol_to_encoding_dict):
-    encoded_string = ''
+def encode(string, symbol_to_encoding_list):
+    string_len = 0
     for symbol in string:
-        encoded_string += symbol_to_encoding_dict[symbol]
-    padding = 8 - (len(encoded_string) % 8)
-    assert(1 <= padding <= 8)
-    bin_string = '0b' + (padding - 1) * '1' + '0' + encoded_string
-    binary_data = bitstring.Bits(bin=bin_string).tobytes()
-    return binary_data
+       string_len += len(symbol_to_encoding_list[ord(symbol)])
+    padding = 8 - (string_len % 8)
+    ba = bitarray((padding - 1) * '1' + '0')
+    for symbol in string:
+        ba += bitarray(symbol_to_encoding_list[ord(symbol)])
+    return ba.tobytes()
 
 
 def decode(binary_data, huffman_tree_root):

@@ -109,19 +109,20 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
 
     with open(f'{file_name_prefix}_index.csv', mode='wb') as f:
         for stem in sorted(all_comment_dict.keys()):
-            posting_list = all_comment_dict[stem]
-            escaped_stem = stem.replace('"', '""')
-            line_string = f'"{escaped_stem}"' \
-                f'{posting_list_separator}{term_count_dict[stem]}'
-            for posting_list_parts in sorted(posting_list):
-                line_string += \
-                    f'{posting_list_separator}{posting_list_parts[0]},'
-                # list of token positions in comment
-                line_string += ','.join(
-                    (str(i) for i in posting_list_parts[1]))
-            line_string += '\n'
-            line_raw = line_string.encode()
-            f.write(line_raw)
+            if len(stem) > 1 and len(stem) <= 128:
+                posting_list = all_comment_dict[stem]
+                escaped_stem = stem.replace('"', '""')
+                line_string = f'"{escaped_stem}"' \
+                    f'{posting_list_separator}{term_count_dict[stem]}'
+                for posting_list_parts in sorted(posting_list):
+                    line_string += \
+                        f'{posting_list_separator}{posting_list_parts[0]},'
+                    # list of token positions in comment
+                    line_string += ','.join(
+                        (str(i) for i in posting_list_parts[1]))
+                line_string += '\n'
+                line_raw = line_string.encode()
+                f.write(line_raw)
 
     with open(f'{file_name_prefix}_comment_term_count_dict.pickle',
               mode='wb') as f:
@@ -354,54 +355,73 @@ class IndexCreator():
                     create_list_from_csv(f'{self.directory}/articles.csv'),
                     f, pickle.HIGHEST_PROTOCOL)
 
-    def huffman_compression(self):
+    def huffman_compression(self, generate_encoding = False):
         # compress using Huffman encoding
-
+        symbol_to_encoding_list = [0] * 58
         # count all occuring UTF-8 characters
-        symbol_to_frequency_dict = {}
-        with self.report.measure('counting utf8 characters'):
-            with open(f'{self.directory}/index.csv') as index_file:
-                chunk_size = 100000
-
-                def next_chunk_generator():
-                    chunk = index_file.read(chunk_size)
-                    while chunk:
-                        yield chunk
+        if generate_encoding:
+            symbol_to_frequency_dict = {}
+            symbol_to_frequency_list = [0] * 58
+            with self.report.measure('counting utf8 characters'):
+                with open(f'{self.directory}/index.csv', mode='rb') as index_file:
+                    chunk_size = 100000
+            
+                    def next_chunk_generator():
                         chunk = index_file.read(chunk_size)
+                        while chunk:
+                            yield chunk
+                            chunk = index_file.read(chunk_size)
+            
+                    for i, chunk in enumerate(next_chunk_generator(), 1):
+                        for symbol in chunk:
+                            if (symbol < 58 and symbol > 47) or symbol == 7 or symbol == 44:
+                                symbol_to_frequency_list[symbol] += 1
+                                #if symbol not in symbol_to_frequency_dict.keys():
+                                #    symbol_to_frequency_dict[symbol] = 1
+                                #else:
+                                #    symbol_to_frequency_dict[symbol] += 1
+                        self.report.progress(i, f' chunks counted ({chunk_size}'
+                                             ' characters each)', 100)
+                for i in range(len(symbol_to_frequency_list)):
+                    if symbol_to_frequency_list[i] > 0:
+                        symbol_to_frequency_dict[str(chr(i))] = symbol_to_frequency_list[i]
+            # derive huffman encoding from character counts
+            with self.report.measure('deriving huffman encoding'):
+                huffman_tree_root, symbol_to_encoding_dict = \
+                    Huffman.derive_encoding(symbol_to_frequency_dict)
+            for key, value in symbol_to_encoding_dict:
+                symbol_to_encoding_list[oct(key)] = value
+            with open(f'{self.directory}/huffman_tree.pickle', mode='wb') as f:
+                pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
+        else:
+            # encoding for guardian, character distribution should be similar in all datasets
+            symbol_to_encoding_list[7] = '1111'  # '\a'
+            symbol_to_encoding_list[44] = '101'  # ','
+            symbol_to_encoding_list[48] = '1111' # '0'
+            symbol_to_encoding_list[49] = '011'  # '1'
+            symbol_to_encoding_list[50] = '001'  # '2'
+            symbol_to_encoding_list[51] = '000'  # '3'
+            symbol_to_encoding_list[52] = '1110' # '4'
+            symbol_to_encoding_list[53] = '1101' # '5'
+            symbol_to_encoding_list[54] = '1100' # '6'
+            symbol_to_encoding_list[55] = '1011' # '7'
+            symbol_to_encoding_list[56] = '1010' # '8'
+            symbol_to_encoding_list[57] = '1001' # '9'
 
-                for i, chunk in enumerate(next_chunk_generator(), 1):
-                    for symbol in chunk:
-                        if symbol == '\n':
-                            continue
-
-                        if symbol not in symbol_to_frequency_dict.keys():
-                            symbol_to_frequency_dict[symbol] = 1
-                        else:
-                            symbol_to_frequency_dict[symbol] += 1
-                    self.report.progress(i, f' chunks counted ({chunk_size}'
-                                         ' characters each)', 100)
-
-        # derive huffman encoding from character counts
-        with self.report.measure('deriving huffman encoding'):
-            huffman_tree_root, symbol_to_encoding_dict = \
-                Huffman.derive_encoding(symbol_to_frequency_dict)
 
         # save compressed index and corresponding seek_list
         with self.report.measure('saving compressed files'):
-            with open(f'{self.directory}/huffman_tree.pickle', mode='wb') as f:
-                pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
-
             self.compressed_seek_list = []
             with open(f'{self.directory}/compressed_index', mode='wb') \
                     as compressed_index_file:
                 offset = 0
                 for i, orig_line in enumerate(
-                        read_line_generator(f'{self.directory}/index.csv'), 1):
+                        binary_read_line_generator_path(f'{self.directory}/index.csv'), 1):
                     term = next(csv.reader(io.StringIO(orig_line),
                                 delimiter=posting_list_separator))[0]
                     line_without_term = orig_line[len(term) + 3:]
                     encoded_line = Huffman.encode(
-                        line_without_term, symbol_to_encoding_dict)
+                        line_without_term, symbol_to_encoding_list)
                     compressed_index_file.write(encoded_line)
 
                     self.compressed_seek_list.append(
@@ -421,7 +441,7 @@ if __name__ == '__main__':
     data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
-    # index_creator.huffman_compression()
+    #index_creator.huffman_compression()
     # with open(f'{data_directory}/huffman_tree.pickle',
     #           mode='rb') as huffman_tree_file, \
     #         open(f'{data_directory}/compressed_index',
