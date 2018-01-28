@@ -11,6 +11,8 @@ import csv
 
 import Stemmer
 import nltk.tokenize
+from dawg import RecordDAWG
+# TODO write and load without pickle
 
 import Huffman
 from Report import Report
@@ -73,12 +75,12 @@ def process_comments_file(directory, start_offset, end_offset,
     with open(f'{directory}/{end_offset}_file_number.pickle', mode='wb') as f:
         pickle.dump(file_number, f, pickle.HIGHEST_PROTOCOL)
 
-    with open(f'{directory}/{end_offset}_reply_to_index.pickle', mode='wb') \
-            as f:
+    with open(f'{directory}/{end_offset}_reply_to_index.pickle',
+              mode='wb') as f:
         pickle.dump(reply_to_index, f, pickle.HIGHEST_PROTOCOL)
 
-    with open(f'{directory}/{end_offset}_cid_to_offset.pickle', mode='wb') \
-            as f:
+    with open(f'{directory}/{end_offset}_cid_to_offset.pickle',
+              mode='wb') as f:
         pickle.dump(cid_to_offset, f, pickle.HIGHEST_PROTOCOL)
 
 
@@ -301,8 +303,8 @@ class IndexCreator():
                         line_string += '\n'
                         line_raw = line_string.encode()
                         f.write(line_raw)
-                        self.seek_list.append([current_min_term[1:-1].replace(
-                            '""', '"'), current_offset])
+                        term = current_min_term[1:-1].replace('""', '"')
+                        self.seek_list.append((term, [current_offset]))
                         current_offset += len(line_raw)
 
                     # reload lines where necessary
@@ -327,13 +329,11 @@ class IndexCreator():
                     if terms_done % 100000 == 0:
                         print(f'Merged {terms_done} terms.')
 
-            # seek list
-            with open(f'{self.directory}/seek_list.pickle', mode='wb') as f:
-                pickle.dump(self.seek_list, f, pickle.HIGHEST_PROTOCOL)
+            self.seek_list = RecordDAWG('>I', self.seek_list)
+            self.seek_list.save(f'{self.directory}/seek_list.dawg')
 
-            # cleanup
-            for file in index_files:
-                file.close()
+            for f in index_files:
+                f.close()
 
             for file_prefix in self.partial_index_names:
                 file_path = file_prefix + '_index.csv'
@@ -391,7 +391,7 @@ class IndexCreator():
             with open(f'{self.directory}/huffman_tree.pickle', mode='wb') as f:
                 pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
 
-            self.compressed_seek_list = {}
+            self.compressed_seek_list = []
             with open(f'{self.directory}/compressed_index', mode='wb') \
                     as compressed_index_file:
                 offset = 0
@@ -404,17 +404,17 @@ class IndexCreator():
                         line_without_term, symbol_to_encoding_dict)
                     compressed_index_file.write(encoded_line)
 
-                    self.compressed_seek_list[term] = \
-                        (offset, len(encoded_line))
+                    self.compressed_seek_list.append(
+                        (term, (offset, len(encoded_line))))
 
                     self.report.progress(i, ' index lines compressed')
 
                     offset += len(encoded_line)
 
-            with open(f'{self.directory}/compressed_seek_list.pickle',
-                      mode='wb') as f:
-                pickle.dump(
-                    self.compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
+            self.compressed_seek_list = \
+                RecordDAWG('>II', self.compressed_seek_list)
+            self.compressed_seek_list.save(
+                f'{self.directory}/compressed_seek_list.dawg')
 
 
 if __name__ == '__main__':
@@ -425,15 +425,20 @@ if __name__ == '__main__':
     # with open(f'{data_directory}/huffman_tree.pickle',
     #           mode='rb') as huffman_tree_file, \
     #         open(f'{data_directory}/compressed_index',
-    #              mode='rb') as compressed_index_file, \
-    #         open(f'{data_directory}/compressed_seek_list.pickle',
-    #              mode='rb') as compressed_seek_list_file:
+    #              mode='rb') as compressed_index_file:
     #     huffman_tree_root = pickle.load(huffman_tree_file)
-    #     compressed_seek_list = pickle.load(compressed_seek_list_file)
-    #     offset, length = compressed_seek_list['xi']
+    #     compressed_seek_list = RecordDAWG('>II')
+    #     compressed_seek_list.load(
+    #         f'{data_directory}/compressed_seek_list.dawg')
+    #     offset, length = compressed_seek_list['xi'][0]
     #     compressed_index_file.seek(offset)
     #     binary_data = compressed_index_file.read(length)
     #     decoded_string = Huffman.decode(binary_data,
     #                                     huffman_tree_root)
-    #     print(decoded_string)
+    #     print(f'decoded_string: {decoded_string}')
+    #     prefix = 'eu'
+    #     print(f'terms starting with {prefix}:',
+    #           f'{compressed_seek_list.keys(prefix)}')
+    #     for key, value in compressed_seek_list.iteritems(prefix):
+    #         print(key, value)
     index_creator.report.all_time_measures()

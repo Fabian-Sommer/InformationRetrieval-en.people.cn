@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import Stemmer
 import string
 import pickle
 import math
@@ -8,7 +7,9 @@ import random
 import re
 import heapq
 import time
-from sys import argv
+
+import Stemmer
+from dawg import RecordDAWG
 
 from Report import Report
 from Common import *
@@ -19,7 +20,7 @@ from IRWS_Argument_Parsing import args
 class SearchEngine():
 
     def __init__(self, using_compression=True):
-        self.seek_list = []
+        self.seek_list = None
         self.comment_file = None
         self.index_file = None
         self.huffman_tree_root = None
@@ -36,20 +37,19 @@ class SearchEngine():
 
     def load_index(self, directory):
         if self.using_compression:
-            with open(f'{directory}/compressed_seek_list.pickle', mode='rb') \
-                    as f:
-                self.seek_list = pickle.load(f)
+            self.seek_list = RecordDAWG('>II')
+            self.seek_list.load(f'{directory}/compressed_seek_list.dawg')
             self.index_file = open(f'{directory}/compressed_index', mode='rb')
             with open(f'{directory}/huffman_tree.pickle', mode='rb') as f:
                 self.huffman_tree_root = pickle.load(f)
         else:
-            with open(f'{directory}/seek_list.pickle', mode='rb') as f:
-                self.seek_list = pickle.load(f)
+            self.seek_list = RecordDAWG('>I')
+            self.seek_list.load(f'{directory}/seek_list.dawg')
             self.index_file = open(f'{directory}/index.csv',
                                    mode='r', encoding='utf-8')
 
-        with open(f'{directory}/comment_term_count_dict.pickle', mode='rb') \
-                as f:
+        with open(f'{directory}/comment_term_count_dict.pickle',
+                  mode='rb') as f:
             self.comment_term_count_dict = pickle.load(f)
         with open(f'{directory}/collection_term_count.pickle', mode='rb') as f:
             self.collection_term_count = pickle.load(f)
@@ -67,14 +67,14 @@ class SearchEngine():
 
     def load_posting_list_parts(self, stem):
         if self.using_compression:
-            offset, size = self.seek_list[stem]
+            offset, size = self.seek_list[stem][0]
             self.index_file.seek(offset)
             binary_data = self.index_file.read(size)
             decoded_posting_list = Huffman.decode(
                 binary_data, self.huffman_tree_root)
             return [stem] + decoded_posting_list.split(posting_list_separator)
         else:
-            self.index_file.seek(self.seek_list[stem])
+            self.index_file.seek(self.seek_list[stem][0])
             posting_list = self.index_file.readline().rstrip('\n')
             return posting_list.split(posting_list_separator)
 
@@ -156,7 +156,7 @@ class SearchEngine():
     # starting with prefix
     # TODO implement without prefix tree...
     def get_offsets_for_prefix(self, prefix):
-        stems = self.seek_list.startswith(prefix)
+        stems = self.seek_list.keys(prefix)
         result = []
         for stem in stems:
             result += self.get_offsets_for_stem(stem)
@@ -166,7 +166,7 @@ class SearchEngine():
         match = re.search(r'\'[^"]*\'', query)
         if not match:
             self.report.report('invalid phrase query')
-            exit()
+            return []
         phrase = match.group()[1:-1]
         new_query = phrase.replace(' ', ' AND ')
         possible_matches = self.get_comment_offsets_for_query(new_query)
