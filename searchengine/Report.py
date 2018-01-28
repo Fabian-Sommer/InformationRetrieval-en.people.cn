@@ -20,7 +20,7 @@ class Report():
             return
 
         max_length = max((len(task) for task in self.time_measures.keys()))
-        total_time = sum(self.time_measures.values())
+        total_time = 0.00001 + sum(self.time_measures.values())
         total_row = \
             f'{"total_time":{max_length + 5}} | {total_time:>8.2f} sec'
         '   |   100.00%\n'

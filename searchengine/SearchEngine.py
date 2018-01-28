@@ -152,16 +152,6 @@ class SearchEngine():
         posting_list_parts = self.load_posting_list_parts(stem)
         return [int(x.partition(',')[0]) for x in posting_list_parts[2:]]
 
-    # returns offsets into comment file for all comments containing stem
-    # starting with prefix
-    # TODO implement without prefix tree...
-    def get_offsets_for_prefix(self, prefix):
-        stems = self.seek_list.keys(prefix)
-        result = []
-        for stem in stems:
-            result += self.get_offsets_for_stem(stem)
-        return result
-
     def get_comment_offsets_for_phrase_query(self, query):
         match = re.search(r'\'[^"]*\'', query)
         if not match:
@@ -195,7 +185,11 @@ class SearchEngine():
         assert(' ' not in query)
 
         if query[-1] == '*':
-            return self.get_offsets_for_prefix(query[:-1].lower())
+            stems = self.seek_list.keys(query[:-1].lower())
+            result = []
+            for stem in stems:
+                result.extend(self.get_offsets_for_stem(stem))
+            return result
         else:
             return self.get_offsets_for_stem(
                 self.stemmer.stemWord(query.lower()))
@@ -268,8 +262,52 @@ class SearchEngine():
         return results
 
     def is_boolean_query(self, query):
-        return ' AND ' in query or ' OR ' in query or ' NOT ' in query \
-            or '*' in query
+        return ' AND ' in query or ' OR ' in query or ' NOT ' in query
+
+    def basic_search(self, query):
+        # search for a single query token
+        # TODO call this after properly splitting up query
+
+        if len(query) == 0:
+            return []
+
+        # phrase prefix query: 'new ye'*
+        if len(query) > 1 and query[-2] == "'":
+            assert(query[0] == "'" and query.count("'") == 2
+                   and query[-1] == '*')
+            parts = query[1:-2].rpartition(' ')
+            phrase = parts[0]
+            prefix = parts[2]
+            phrases = [f"'{phrase} {stem}'"
+                       for stem in self.seek_list.keys(prefix)]
+            result = set()
+            for phrase in phrases:
+                for comment_offset in self.basic_search(phrase):
+                    result.add(comment_offset)
+            return list(result)
+        # phrase query: 'european union'
+        elif query[-1] == "'":
+            assert(query[0] == "'" and query.count("'") == 2)
+            # TODO
+        # prefix query: isra*
+        elif query[-1] == '*':
+            assert(query.count('*') == 1)
+            stems_with_prefix = self.seek_list.keys(prefix)
+            return itertools.accumulate(stems_with_prefix)
+            result = []
+            for stem in stems_with_prefix:
+                result.extend(self.get_offsets_for_stem(stem))
+            return result
+        # ReplyTo query: ReplyTo:12345
+        elif 'ReplyTo:' in query:
+            assert(query.count('ReplyTo:') == 1 and
+                   query.startswith('ReplyTo:'))
+            target_cid = int(query.partition('ReplyTo:')[2])
+            return self.reply_to_index[target_cid]
+        # keyword query: trump
+        else:
+            assert(' ' not in query)
+            return self.get_offsets_for_stem(self.stemmer.stemWord(query))
 
     def search(self, query, top_k=3, printIdsOnly=False):
         def show_comments(comment_iterable):

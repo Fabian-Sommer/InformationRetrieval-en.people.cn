@@ -8,11 +8,11 @@ import functools
 import sys
 import multiprocessing
 import csv
+from collections import Counter
 
 import Stemmer
 import nltk.tokenize
 from dawg import RecordDAWG
-# TODO write and load without pickle
 
 import Huffman
 from Report import Report
@@ -150,6 +150,7 @@ class IndexCreator():
             quiet_mode=__name__ != '__main__',
             log_file_path=f'{directory}/log_IndexCreator.py.csv')
 
+    # TODO fix or remove compress_index option
     def create_index(self, skip_first_line=True, compress_index=True):
         # read csv to create comment_list
 
@@ -358,7 +359,7 @@ class IndexCreator():
         # compress using Huffman encoding
 
         # count all occuring UTF-8 characters
-        symbol_to_frequency_dict = {}
+        symbol_to_frequency_dict = Counter()
         with self.report.measure('counting utf8 characters'):
             with open(f'{self.directory}/index.csv') as index_file:
                 chunk_size = 100000
@@ -370,16 +371,11 @@ class IndexCreator():
                         chunk = index_file.read(chunk_size)
 
                 for i, chunk in enumerate(next_chunk_generator(), 1):
-                    for symbol in chunk:
-                        if symbol == '\n':
-                            continue
-
-                        if symbol not in symbol_to_frequency_dict.keys():
-                            symbol_to_frequency_dict[symbol] = 1
-                        else:
-                            symbol_to_frequency_dict[symbol] += 1
+                    symbol_to_frequency_dict.update(Counter(chunk))
                     self.report.progress(i, f' chunks counted ({chunk_size}'
                                          ' characters each)', 100)
+        if '\n' in symbol_to_frequency_dict.keys():
+            del symbol_to_frequency_dict['\n']
 
         # derive huffman encoding from character counts
         with self.report.measure('deriving huffman encoding'):
