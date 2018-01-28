@@ -397,10 +397,10 @@ class IndexCreator():
         else:
             # encoding for guardian, character distribution should be similar in all datasets
             symbol_to_encoding_list[7] = '1111'  # '\a'
-            symbol_to_encoding_list[44] = '101'  # ','
-            symbol_to_encoding_list[48] = '1111' # '0'
+            symbol_to_encoding_list[44] = '001'  # ','
+            symbol_to_encoding_list[48] = '1000' # '0'
             symbol_to_encoding_list[49] = '011'  # '1'
-            symbol_to_encoding_list[50] = '001'  # '2'
+            symbol_to_encoding_list[50] = '010'  # '2'
             symbol_to_encoding_list[51] = '000'  # '3'
             symbol_to_encoding_list[52] = '1110' # '4'
             symbol_to_encoding_list[53] = '1101' # '5'

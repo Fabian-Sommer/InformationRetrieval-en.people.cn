@@ -76,22 +76,23 @@ def encode(string, symbol_to_encoding_list):
         ba += bitarray(symbol_to_encoding_list[ord(symbol)])
     return ba.tobytes()
 
+huffman_dict = {
+        '\a': bitarray('1111'), ',': bitarray('001'),
+        '0': bitarray('1000'), '1': bitarray('011'),
+        '2': bitarray('010'), '3': bitarray('000'), 
+        '4': bitarray('1110'), '5': bitarray('1101'), 
+        '6': bitarray('1100'), '7': bitarray('1011'), 
+        '8': bitarray('1010'), '9': bitarray('1001')
+    }
 
 def decode(binary_data, huffman_tree_root):
-    decoded_string = ''
-    bit_stream = bitstring.ConstBitStream(bytes=binary_data)
-
-    # skip padding (see encode)
-    while bit_stream.read('bool'):
-        pass
-
-    while bit_stream.pos < len(bit_stream):
-        node = huffman_tree_root
-        while not node.is_leaf():
-            node = node.child(bit_stream.read('bool'))
-        decoded_string += node.symbol
-
-    return decoded_string
+    padding = 0
+    ba = bitarray()
+    ba.frombytes(binary_data)
+    while bool(ba[padding]):
+        padding += 1
+    dec = ba[padding+1:].decode(huffman_dict)
+    return ''.join(dec)
 
 
 if __name__ == '__main__':
