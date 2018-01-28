@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import time
 from functools import wraps
@@ -16,6 +16,9 @@ class Report():
             print(*args, **kwargs)
 
     def all_time_measures(self):
+        if len(self.time_measures.keys()) == 0:
+            return
+
         max_length = max((len(task) for task in self.time_measures.keys()))
         total_time = sum(self.time_measures.values())
         total_row = \

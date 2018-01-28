@@ -41,7 +41,8 @@ def replace_chinese_punctuation(file_path):
 
 def fix_csv(csv_file_path):
     with open(csv_file_path, newline='') as csv_file, \
-            open(f'{csv_file_path}.fixed', mode='w', newline='') as csv_output_file:
+            open(f'{csv_file_path}.fixed', mode='w', newline='') \
+            as csv_output_file:
         csv_writer = csv.writer(csv_output_file)
         for line in read_line_generator(csv_file):
             csv_writer.writerow(line[1:-1].split('","'))

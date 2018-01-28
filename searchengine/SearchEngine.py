@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 import Stemmer
 import string
@@ -13,6 +13,7 @@ from sys import argv
 from Report import Report
 from Common import *
 import Huffman
+from IRWS_Argument_Parsing import args
 
 
 class SearchEngine():
@@ -270,43 +271,52 @@ class SearchEngine():
         return ' AND ' in query or ' OR ' in query or ' NOT ' in query \
             or '*' in query
 
-    def search(self, query, top_k=10):
+    def search(self, query, top_k=3, printIdsOnly=False):
+        def show_comments(comment_iterable):
+            if printIdsOnly:
+                cids = (str(comment.cid) for comment in comment_iterable)
+                self.report.report(','.join(cids))
+            else:
+                for comment in comment_iterable:
+                    self.report.report(
+                        f'id: {comment.cid}, text:\n{comment.text}\n')
+            self.report.report()
 
         self.report.report('-------------------------------------------------')
         self.report.report(f'searching for "{query}":')
 
+        comment_offsets = []
+
+        # boolean query
         if self.is_boolean_query(query):
-            comment_offsets = self.get_comment_offsets_for_query(query)
+            with self.report.measure('searching'):
+                comment_offsets = self.get_comment_offsets_for_query(query)
             self.report.report(
                 f'{len(comment_offsets)} comments matched the query')
-            if len(comment_offsets) > 0:
-                self.report.report('example comment:')
-                random_index = random.randrange(0, len(comment_offsets))
-                example_comment = \
-                    self.load_comment(comment_offsets[random_index])
-                self.report.report(example_comment.text)
-            self.report.report()
+            show_comments(map(self.load_comment, comment_offsets))
             return
 
-        if query[:8] == "ReplyTo:":
-            target_cid = int(query[8:])
-            self.report.report("target comment:",
-                               self.load_comment_from_cid(target_cid),
-                               '\nreplies to that comment:')
-
-            for i, cid in enumerate(self.reply_to_index[target_cid]):
-                if i == top_k:
-                    break
-                self.report.report(self.load_comment_from_cid(cid))
+        # ReplyTo query
+        if query.startswith("ReplyTo:"):
+            target_cid = int(query.partition("ReplyTo:")[2])
+            self.report.report("target comment:")
+            show_comments((self.load_comment_from_cid(target_cid),))
+            replies = []
+            with self.report.measure('searching'):
+                replies = self.reply_to_index[target_cid]
+            self.report.report(f'found {len(replies)} replies:')
+            show_comments(map(self.load_comment_from_cid, replies[:top_k]))
             return
 
-        if "'" not in query:
+        if "'" in query:
+            # phrase query
+            assert(query[0] == "'" == query[-1])
+            query_terms = [query.lower()]
+        else:
+            # keyword query
             query = query.replace(' ', ' OR ')
             query_terms = [self.stemmer.stemWord(term.lower())
                            for term in query.split(' OR ')]
-        else:
-            assert(query[0] == "'" == query[-1])
-            query_terms = [query]
 
         with self.report.measure('searching'):
             comment_offsets = self.get_comment_offsets_for_query(query)
@@ -332,21 +342,20 @@ class SearchEngine():
                     heapq.heappushpop(top_k_rated_comments,
                                       (score, comment_offset))
 
-        self.report.report('results:')
         top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
-        for score, comment_offset in top_k_rated_comments:
-            self.report.report(f'score: {score}, text:')
-            self.report.report(f'{self.load_comment(comment_offset).text}\n')
-
-        self.report.all_time_measures()
+        show_comments(self.load_comment(comment_offset)
+                      for score, comment_offset in top_k_rated_comments)
 
 
 if __name__ == '__main__':
-    data_directory = 'data/fake' if len(argv) < 2 else argv[1]
+    data_directory = 'data/enpeople'  # TODO change to '.' before submitting
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
 
-    queries = ["trump"]
-    for query in queries:
-        search_engine.search(query, 5)
+    topN = 3 if args.topN is None else args.topN
+
+    for query in read_line_generator(args.query):
+        search_engine.search(query, topN, args.printIdsOnly)
+        search_engine.report.all_time_measures()
+        print('\n\n')
