@@ -3,6 +3,7 @@
 from sys import argv
 import csv
 
+
 def read_line_generator(file_path):
     with open(file_path) as target_file:
         line = target_file.readline().rstrip('\n')
@@ -16,6 +17,10 @@ def standardize_format(csv_file_path, expected_number_of_fields=None):
         csv_reader = csv.reader(read_line_generator(csv_file_path))
         csv_writer = csv.writer(output_csv)
         for i, row in enumerate(csv_reader, start=1):
+            # line 117 is broken in the guardian dataset ;)
+            if i == 117:
+                continue
+
             if expected_number_of_fields is not None \
                     and len(row) != expected_number_of_fields:
                 print(f'unexpected number of fields: {len(row)} for this row:')
@@ -25,7 +30,6 @@ def standardize_format(csv_file_path, expected_number_of_fields=None):
 
             if i % 100000 == 0:
                 print(f'{i} rows standardized')
-
 
 
 if __name__ == '__main__':

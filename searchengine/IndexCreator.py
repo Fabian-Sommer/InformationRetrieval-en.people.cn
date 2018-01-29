@@ -52,7 +52,8 @@ def process_comments_file(directory, start_offset, end_offset,
                     comment[1].append(stem(token))
             comment_list.append(comment)
 
-            parent_cid = int(csv_line[5])
+            # TODO handle no parent
+            parent_cid = int(csv_line[5]) if csv_line[5] != '' else -1
             if parent_cid != -1:
                 if parent_cid not in reply_to_index.keys():
                     reply_to_index[parent_cid] = [cid]
@@ -179,10 +180,13 @@ class IndexCreator():
                             continue
                         offsets.append(next_offset)
 
+                def on_error(exception):
+                    raise exception
                 for start_offset, end_offset in zip(offsets, offsets[1:]):
                     pool.apply_async(
                         process_comments_file,
-                        args=(self.directory, start_offset, end_offset))
+                        args=(self.directory, start_offset, end_offset),
+                        error_callback=on_error)
                 pool.close()
                 pool.join()
 
