@@ -9,6 +9,7 @@ import heapq
 import time
 
 import Stemmer
+import nltk.tokenize
 from dawg import RecordDAWG
 
 from Report import Report
@@ -32,6 +33,7 @@ class SearchEngine():
         self.cid_to_offset = None
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
+        self.tokenizer = nltk.tokenize.ToktokTokenizer()
         self.using_compression = using_compression
         self.report = Report()
 
@@ -275,33 +277,63 @@ class SearchEngine():
         if len(query) == 0:
             return []
 
+        query = query.lower()
+
         # phrase prefix query: 'new ye'*
         if len(query) > 1 and query[-2] == "'":
+            # TODO this works but is toooo slow
             assert(query[0] == "'" and query.count("'") == 2
                    and query[-1] == '*')
+
             parts = query[1:-2].rpartition(' ')
-            phrase = parts[0]
+            phrase_start = parts[0]
             prefix = parts[2]
-            phrases = [f"'{phrase} {stem}'"
-                       for stem in self.seek_list.keys(prefix)]
+            phrases = (f"'{phrase_start} {stem}'"
+                       for stem in self.seek_list.keys(prefix))
             result = set()
             for phrase in phrases:
-                for comment_offset in self.basic_search(phrase):
-                    result.add(comment_offset)
+                if phrase.count("'") > 2:
+                    print(phrase)
+                    print(phrase_start)
+                    print(prefix)
+                for offset in self.basic_search(phrase):
+                    result.add(offset)
             return list(result)
+
         # phrase query: 'european union'
         elif query[-1] == "'":
             assert(query[0] == "'" and query.count("'") == 2)
-            # TODO
+
+            stem_offset_size_list = []  # may contain duplicates!
+            phrase = query[1:-1]
+            for sentence in nltk.tokenize.sent_tokenize(phrase):
+                for token in self.tokenizer.tokenize(sentence):
+                    stem = self.stemmer.stemWord(token)
+                    if stem not in self.seek_list:
+                        continue
+                    stem_offset_size_list.append((stem, self.seek_list[stem]))
+
+            # sort by posting_list size
+            stem_offset_size_list.sort(key=lambda t: t[1][0][1])
+            smallest_stem = stem_offset_size_list[0][0]
+            result = []
+            for offset in self.get_offsets_for_stem(smallest_stem):
+                comment = self.load_comment(offset)
+                if phrase in comment.text:
+                    result.append(offset)
+            return result
+
         # prefix query: isra*
         elif query[-1] == '*':
             assert(query.count('*') == 1)
+
+            prefix = query[:-1]
             stems_with_prefix = self.seek_list.keys(prefix)
-            return itertools.accumulate(stems_with_prefix)
             result = []
             for stem in stems_with_prefix:
                 result.extend(self.get_offsets_for_stem(stem))
             return result
+
         # ReplyTo query: ReplyTo:12345
         elif 'ReplyTo:' in query:
             assert(query.count('ReplyTo:') == 1 and
@@ -310,7 +342,8 @@ class SearchEngine():
             if target_cid not in self.reply_to_index.keys():
                 return []
             return self.reply_to_index[target_cid]
-        # keyword query: trump
+
+        # keyword query: merkel
         else:
             assert(' ' not in query)
             return self.get_offsets_for_stem(self.stemmer.stemWord(query))
@@ -410,3 +443,10 @@ if __name__ == '__main__':
         search_engine.search(query, topN, args.printIdsOnly)
         search_engine.report.all_time_measures()
         print('\n\n')
+
+    # print(search_engine.seek_list.keys('unreasonabl'))
+    # print(search_engine.seek_list['ye*'])
+
+    # for offset in search_engine.basic_search("'nothing unreasonabl'*"):
+    #     comment = search_engine.load_comment(offset)
+    #     print(comment.text)
