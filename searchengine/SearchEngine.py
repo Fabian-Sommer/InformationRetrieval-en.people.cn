@@ -136,9 +136,12 @@ class SearchEngine():
         comment.author = self.authors_list[int(comment_as_list[2])]
         comment.text = comment_as_list[3]
         comment.timestamp = comment_as_list[4]
-        comment.parent_cid = int(comment_as_list[5])
-        comment.upvotes = int(comment_as_list[6])
-        comment.downvotes = int(comment_as_list[7])
+        comment.parent_cid = int(comment_as_list[5]) \
+            if comment_as_list[5] != '' else -1
+        comment.upvotes = int(comment_as_list[6]) \
+            if len(comment_as_list) >= 7 else 0
+        comment.downvotes = int(comment_as_list[7]) \
+            if len(comment_as_list) >= 8 else 0
 
         return comment
 
@@ -304,6 +307,8 @@ class SearchEngine():
             assert(query.count('ReplyTo:') == 1 and
                    query.startswith('ReplyTo:'))
             target_cid = int(query.partition('ReplyTo:')[2])
+            if target_cid not in self.reply_to_index.keys():
+                return []
             return self.reply_to_index[target_cid]
         # keyword query: trump
         else:
@@ -338,6 +343,10 @@ class SearchEngine():
         # ReplyTo query
         if query.startswith("ReplyTo:"):
             target_cid = int(query.partition("ReplyTo:")[2])
+            if target_cid not in self.reply_to_index.keys():
+                self.report.report(f'comment with id {target_cid} does not '
+                                   'exist or it has no replies')
+                return
             self.report.report("target comment:")
             show_comments((self.load_comment_from_cid(target_cid),))
             replies = []
@@ -387,7 +396,8 @@ class SearchEngine():
 
 
 if __name__ == '__main__':
-    data_directory = 'data/enpeople'  # TODO change to '.' before submitting
+    # TODO change to '.' before submitting
+    data_directory = 'data/small_guardian'
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
@@ -395,6 +405,8 @@ if __name__ == '__main__':
     topN = 3 if args.topN is None else args.topN
 
     for query in read_line_generator(args.query):
+        if query.startswith('#'):  # TODO remove
+            continue
         search_engine.search(query, topN, args.printIdsOnly)
         search_engine.report.all_time_measures()
         print('\n\n')

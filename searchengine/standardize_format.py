@@ -18,7 +18,7 @@ def standardize_format(csv_file_path, expected_number_of_fields=None):
         csv_writer = csv.writer(output_csv)
         for i, row in enumerate(csv_reader, start=1):
             # line 117 is broken in the guardian dataset ;)
-            if i == 117:
+            if i == 117 and row[2] == 'comment_id':
                 continue
 
             if expected_number_of_fields is not None \
