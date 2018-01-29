@@ -7,6 +7,8 @@ import random
 import re
 import heapq
 import time
+import functools
+from functools import reduce
 
 import Stemmer
 import nltk.tokenize
@@ -67,6 +69,17 @@ class SearchEngine():
             self.reply_to_index = pickle.load(f)
         with open(f'{directory}/cid_to_offset.pickle', mode='rb') as f:
             self.cid_to_offset = pickle.load(f)
+
+    def load_collection_stem_count(self, stem):
+        if self.using_compression:
+            offset, size = self.seek_list[stem][0]
+            self.index_file.seek(offset)
+            binary_data = self.index_file.read(100)
+            return Huffman.decode_first(binary_data, self.symbol_to_encoding_dict)
+        else:
+            self.index_file.seek(self.seek_list[stem][0])
+            posting_list = self.index_file.readline().rstrip('\n')
+            return int(posting_list.split(posting_list_separator, maxsplit=2)[1])
 
     def load_posting_list_parts(self, stem):
         if self.using_compression:
@@ -150,6 +163,7 @@ class SearchEngine():
     def load_comment_from_cid(self, cid):
         return self.load_comment(self.cid_to_offset[cid])
 
+
     # returns offsets into comment file for all comments containing stem in
     # ascending order
     def get_offsets_for_stem(self, stem):
@@ -165,6 +179,17 @@ class SearchEngine():
             return []
         phrase = match.group()[1:-1]
         new_query = phrase.replace(' ', ' AND ')
+        # reorder to have words with few matches first
+        split_phrase = new_query.split(' AND ')
+        occ_term_tuple_list = []
+        for term in split_phrase:
+            occ_term_tuple_list.append([self.load_collection_stem_count(self.stemmer.stemWord(term.lower())), term])
+        occ_term_tuple_list.sort()
+        #stopword removal
+        term_list = map((lambda x: x[1]), list(filter((lambda x: x[0] < self.collection_term_count/100),occ_term_tuple_list))) 
+        if term_list == []:
+            term_list = [occ_term_tuple_list[0][1]]
+        new_query = reduce((lambda x, y: x + ' AND ' + y), term_list)
         possible_matches = self.get_comment_offsets_for_query(new_query)
         return [x for x in possible_matches
                 if phrase in self.load_comment(x).text.lower()]
@@ -429,8 +454,7 @@ class SearchEngine():
 
 
 if __name__ == '__main__':
-    # TODO change to '.' before submitting
-    data_directory = 'data/small_guardian'
+    data_directory = 'data/people'  # TODO change to '.' before submitting
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
