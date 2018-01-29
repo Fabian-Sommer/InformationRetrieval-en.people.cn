@@ -23,7 +23,7 @@ class SearchEngine():
         self.seek_list = None
         self.comment_file = None
         self.index_file = None
-        self.huffman_tree_root = None
+        self.symbol_to_encoding_dict = None
         self.comment_csv_reader = None
         self.comment_term_count_dict = None
         self.authors_list = None
@@ -40,8 +40,9 @@ class SearchEngine():
             self.seek_list = RecordDAWG('>II')
             self.seek_list.load(f'{directory}/compressed_seek_list.dawg')
             self.index_file = open(f'{directory}/compressed_index', mode='rb')
-            with open(f'{directory}/huffman_tree.pickle', mode='rb') as f:
-                self.huffman_tree_root = pickle.load(f)
+            with open(f'{directory}/symbol_to_encoding_dict.pickle',
+                      mode='rb') as f:
+                self.symbol_to_encoding_dict = pickle.load(f)
         else:
             self.seek_list = RecordDAWG('>I')
             self.seek_list.load(f'{directory}/seek_list.dawg')
@@ -71,7 +72,7 @@ class SearchEngine():
             self.index_file.seek(offset)
             binary_data = self.index_file.read(size)
             decoded_posting_list = Huffman.decode(
-                binary_data, self.huffman_tree_root)
+                binary_data, self.symbol_to_encoding_dict)
             return [stem] + decoded_posting_list.split(posting_list_separator)
         else:
             self.index_file.seek(self.seek_list[stem][0])

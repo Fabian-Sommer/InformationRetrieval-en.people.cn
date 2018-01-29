@@ -109,19 +109,20 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
 
     with open(f'{file_name_prefix}_index.csv', mode='wb') as f:
         for stem in sorted(all_comment_dict.keys()):
-            posting_list = all_comment_dict[stem]
-            escaped_stem = stem.replace('"', '""')
-            line_string = f'"{escaped_stem}"' \
-                f'{posting_list_separator}{term_count_dict[stem]}'
-            for posting_list_parts in sorted(posting_list):
-                line_string += \
-                    f'{posting_list_separator}{posting_list_parts[0]},'
-                # list of token positions in comment
-                line_string += ','.join(
-                    (str(i) for i in posting_list_parts[1]))
-            line_string += '\n'
-            line_raw = line_string.encode()
-            f.write(line_raw)
+            if len(stem) > 1 and len(stem) <= 128:
+                posting_list = all_comment_dict[stem]
+                escaped_stem = stem.replace('"', '""')
+                line_string = f'"{escaped_stem}"' \
+                    f'{posting_list_separator}{term_count_dict[stem]}'
+                for posting_list_parts in sorted(posting_list):
+                    line_string += \
+                        f'{posting_list_separator}{posting_list_parts[0]},'
+                    # list of token positions in comment
+                    line_string += ','.join(
+                        (str(i) for i in posting_list_parts[1]))
+                line_string += '\n'
+                line_raw = line_string.encode()
+                f.write(line_raw)
 
     with open(f'{file_name_prefix}_comment_term_count_dict.pickle',
               mode='wb') as f:
@@ -134,7 +135,8 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
 
 def create_list_from_csv(csv_file_path):
     result_list = []
-    for line_number, line in enumerate(read_line_generator(csv_file_path)):
+    for line_number, line in enumerate(binary_read_line_generator_path(
+            csv_file_path)):
         parts = line.partition(',')
         assert(line_number == 0 or str(line_number) == parts[0])
         result_list.append(parts[2])
@@ -341,7 +343,7 @@ class IndexCreator():
                 os.remove(file_path)
 
         if compress_index:
-            self.huffman_compression()
+            self.huffman_compression(generate_encoding=True)
 
         with self.report.measure('processing authors & articles'):
             with open(f'{self.directory}/authors_list.pickle', mode='wb') as f:
@@ -355,44 +357,60 @@ class IndexCreator():
                     create_list_from_csv(f'{self.directory}/articles.csv'),
                     f, pickle.HIGHEST_PROTOCOL)
 
-    def huffman_compression(self):
+    def huffman_compression(self, generate_encoding=False):
         # compress using Huffman encoding
+        symbol_to_encoding_dict = {}
 
         # count all occuring UTF-8 characters
-        symbol_to_frequency_dict = Counter()
-        with self.report.measure('counting utf8 characters'):
-            with open(f'{self.directory}/index.csv') as index_file:
-                chunk_size = 100000
+        if generate_encoding:
+            symbol_to_frequency_dict = Counter()
+            with self.report.measure('counting utf8 characters'):
+                with open(f'{self.directory}/index.csv') as index_file:
+                    chunk_size = 100000
 
-                def next_chunk_generator():
-                    chunk = index_file.read(chunk_size)
-                    while chunk:
-                        yield chunk
+                    def next_chunk_generator():
                         chunk = index_file.read(chunk_size)
+                        while chunk:
+                            yield chunk
+                            chunk = index_file.read(chunk_size)
 
-                for i, chunk in enumerate(next_chunk_generator(), 1):
-                    symbol_to_frequency_dict.update(Counter(chunk))
-                    self.report.progress(i, f' chunks counted ({chunk_size}'
-                                         ' characters each)', 100)
-        if '\n' in symbol_to_frequency_dict.keys():
-            del symbol_to_frequency_dict['\n']
+                    for i, chunk in enumerate(next_chunk_generator(), 1):
+                        symbol_to_frequency_dict.update(Counter(chunk))
+                        self.report.progress(
+                            i, f' chunks counted ({chunk_size} characters '
+                            'each)', 100)
+                if '\n' in symbol_to_frequency_dict.keys():
+                    del symbol_to_frequency_dict['\n']
 
-        # derive huffman encoding from character counts
-        with self.report.measure('deriving huffman encoding'):
-            huffman_tree_root, symbol_to_encoding_dict = \
-                Huffman.derive_encoding(symbol_to_frequency_dict)
+            # derive huffman encoding from character counts
+            with self.report.measure('deriving huffman encoding'):
+                symbol_to_encoding_dict = Huffman.derive_encoding(
+                    symbol_to_frequency_dict)
+
+        else:
+            # optimal encoding for guardian
+            # character distribution should be similar for all datasets
+            symbol_to_encoding_dict = {
+                '\a': BitArray('1111'), ',': BitArray('001'),
+                '0': BitArray('1000'), '1': BitArray('011'),
+                '2': BitArray('010'), '3': BitArray('000'),
+                '4': BitArray('1110'), '5': BitArray('1101'),
+                '6': BitArray('1100'), '7': BitArray('1011'),
+                '8': BitArray('1010'), '9': BitArray('1001')
+            }
+
+        with open(f'{self.directory}/symbol_to_encoding_dict.pickle',
+                  mode='wb') as f:
+            pickle.dump(symbol_to_encoding_dict, f, pickle.HIGHEST_PROTOCOL)
 
         # save compressed index and corresponding seek_list
         with self.report.measure('saving compressed files'):
-            with open(f'{self.directory}/huffman_tree.pickle', mode='wb') as f:
-                pickle.dump(huffman_tree_root, f, pickle.HIGHEST_PROTOCOL)
-
             self.compressed_seek_list = []
             with open(f'{self.directory}/compressed_index', mode='wb') \
                     as compressed_index_file:
                 offset = 0
-                for i, orig_line in enumerate(
-                        read_line_generator(f'{self.directory}/index.csv'), 1):
+                for i, orig_line in enumerate(binary_read_line_generator_path(
+                        f'{self.directory}/index.csv'), 1):
                     term = next(csv.reader(io.StringIO(orig_line),
                                 delimiter=posting_list_separator))[0]
                     line_without_term = orig_line[len(term) + 3:]
@@ -418,23 +436,22 @@ if __name__ == '__main__':
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
     # index_creator.huffman_compression()
-    # with open(f'{data_directory}/huffman_tree.pickle',
-    #           mode='rb') as huffman_tree_file, \
+    # with open(f'{data_directory}/symbol_to_encoding_dict.pickle',
+    #           mode='rb') as symbol_to_encoding_dict_file, \
     #         open(f'{data_directory}/compressed_index',
     #              mode='rb') as compressed_index_file:
-    #     huffman_tree_root = pickle.load(huffman_tree_file)
+    #     symbol_to_encoding_dict = pickle.load(symbol_to_encoding_dict_file)
     #     compressed_seek_list = RecordDAWG('>II')
     #     compressed_seek_list.load(
     #         f'{data_directory}/compressed_seek_list.dawg')
     #     offset, length = compressed_seek_list['xi'][0]
     #     compressed_index_file.seek(offset)
     #     binary_data = compressed_index_file.read(length)
-    #     decoded_string = Huffman.decode(binary_data,
-    #                                     huffman_tree_root)
+    #     decoded_string = Huffman.decode(binary_data, symbol_to_encoding_dict)
     #     print(f'decoded_string: {decoded_string}')
-    #     prefix = 'eu'
-    #     print(f'terms starting with {prefix}:',
-    #           f'{compressed_seek_list.keys(prefix)}')
-    #     for key, value in compressed_seek_list.iteritems(prefix):
-    #         print(key, value)
+    #     # prefix = 'eu'
+    #     # print(f'terms starting with {prefix}:',
+    #     #       f'{compressed_seek_list.keys(prefix)}')
+    #     # for key, value in compressed_seek_list.iteritems(prefix):
+    #     #     print(key, value)
     index_creator.report.all_time_measures()

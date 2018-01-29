@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import bitstring
+from bitarray import bitarray as BitArray
 import heapq
 
 
@@ -59,46 +59,40 @@ def derive_encoding(symbol_to_frequency_dict):
             symbol_to_encoding_dict[symbol] = \
                 '1' + symbol_to_encoding_dict[symbol]
 
-    return heap[0], symbol_to_encoding_dict
+    for key, value in symbol_to_encoding_dict.items():
+        symbol_to_encoding_dict[key] = BitArray(value)
+    return symbol_to_encoding_dict
 
 
 # returns bytes, leading 1s and first 0 are padding:
 # 11110011 -> 11110 = padding, 011 = data
 def encode(string, symbol_to_encoding_dict):
-    encoded_string = ''
+    string_len = 0
     for symbol in string:
-        encoded_string += symbol_to_encoding_dict[symbol]
-    padding = 8 - (len(encoded_string) % 8)
-    assert(1 <= padding <= 8)
-    bin_string = '0b' + (padding - 1) * '1' + '0' + encoded_string
-    binary_data = bitstring.Bits(bin=bin_string).tobytes()
-    return binary_data
+        string_len += len(symbol_to_encoding_dict[symbol])
+    padding = 8 - (string_len % 8)
+    bit_array = BitArray((padding - 1) * '1' + '0')
+    for symbol in string:
+        bit_array += BitArray(symbol_to_encoding_dict[symbol])
+    return bit_array.tobytes()
 
 
-def decode(binary_data, huffman_tree_root):
-    decoded_string = ''
-    bit_stream = bitstring.ConstBitStream(bytes=binary_data)
-
-    # skip padding (see encode)
-    while bit_stream.read('bool'):
-        pass
-
-    while bit_stream.pos < len(bit_stream):
-        node = huffman_tree_root
-        while not node.is_leaf():
-            node = node.child(bit_stream.read('bool'))
-        decoded_string += node.symbol
-
-    return decoded_string
+def decode(binary_data, symbol_to_encoding_dict):
+    padding = 0
+    bit_array = BitArray()
+    bit_array.frombytes(binary_data)
+    while bool(bit_array[padding]):
+        padding += 1
+    decoded_chars = bit_array[padding+1:].decode(symbol_to_encoding_dict)
+    return ''.join(decoded_chars)
 
 
 if __name__ == '__main__':
     string = 'hallo'
     symbol_to_frequency_dict = {'h': 120, 'a': 20, 'l': 2, 'o': 73}
-    huffman_tree_root, symbol_to_encoding_dict = \
-        derive_encoding(symbol_to_frequency_dict)
+    symbol_to_encoding_dict = derive_encoding(symbol_to_frequency_dict)
     encoded_string = encode('hallo', symbol_to_encoding_dict)
-    decoded_string = decode(encoded_string, huffman_tree_root)
+    decoded_string = decode(encoded_string, symbol_to_encoding_dict)
 
     print(f'string: {string}')
     print(f'symbol_to_encoding_dict: {symbol_to_encoding_dict}')
