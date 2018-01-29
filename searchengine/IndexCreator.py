@@ -13,6 +13,7 @@ from collections import Counter
 import Stemmer
 import nltk.tokenize
 from dawg import RecordDAWG
+from bitarray import bitarray as BitArray
 
 import Huffman
 from Report import Report

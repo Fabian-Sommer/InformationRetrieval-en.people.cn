@@ -17,3 +17,6 @@ Benedikt has a good remark: Please sort also the other two csv files by id (arti
 >> Stemming and Prefix/Wild card queries
 >> One assumption you can make for your search engine is that the prefix itself (in the prefix query) is a stem or only a part of a stem. It is not mandatory to implement any more complex approaches
 >> For your information, one way to optimize prefix/wild card queries is described here: https://www.elastic.co/guide/en/elasticsearch/guide/current/_ngrams_for_partial_matching.html. You do not need to consider this optimization for your search engine. How a search engine could combine stemming and wild cards in one query is described here: https://my.vertica.com/docs/IDOL_11_5/IDOLServer/Guides/html/English/expert/Content/IDOLExpert/Inquire/Wildcard_Search.htm
+
+guardian:
+article_id,author_id,comment_id,comment_text,parent_comment_id,timestamp,upvotes

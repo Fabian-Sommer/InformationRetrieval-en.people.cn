@@ -62,6 +62,7 @@ def binary_read_line_generator_path(target_file_path):
             yield line
             line = target_file.readline().decode().rstrip('\n')
 
+
 def binary_read_line_generator(target_file):
     # use for files opened in binary mode
     # (maybe to first seek to offset and read from there)
