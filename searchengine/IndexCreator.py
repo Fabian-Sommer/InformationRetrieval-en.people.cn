@@ -28,7 +28,7 @@ def process_comments_file(directory, start_offset, end_offset,
     file_number = 0
     reply_to_index = {}
     cid_to_offset = {}
-    with open(f'{directory}/comments.csv', mode='rb') as f:
+    with open(f'{directory}/comments.csv.standardized.csv', mode='rb') as f:
         f.seek(start_offset)
         previous_offset = start_offset
         csv_reader = csv.reader(binary_read_line_generator(f))
@@ -41,8 +41,10 @@ def process_comments_file(directory, start_offset, end_offset,
             if(not 6 <= len(csv_line) <= 8):
                 print(f'WARNING: len(csv_line) == {len(csv_line)}',
                       'which is not between 6 and 8')
+
             cid = int(csv_line[0])
             assert(cid not in cid_to_offset.keys())
+
             cid_to_offset[cid] = previous_offset
 
             comment = (previous_offset, [])
@@ -71,6 +73,7 @@ def process_comments_file(directory, start_offset, end_offset,
                 comment_list = []
                 if previous_offset == end_offset:
                     break
+
             assert(previous_offset < end_offset)
 
     with open(f'{directory}/{end_offset}_file_number.pickle', mode='wb') as f:
@@ -147,7 +150,7 @@ def create_list_from_csv(csv_file_path):
 class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
-        assert(os.path.isfile(f'{self.directory}/comments.csv'))
+        assert(os.path.isfile(f'{self.directory}/comments.csv.standardized.csv'))
         sys.setrecursionlimit(10000)
         self.report = Report(
             quiet_mode=__name__ != '__main__',
@@ -157,13 +160,13 @@ class IndexCreator():
     def create_index(self, compress_index=True):
         # read csv to create comment_list
 
-        with self.report.measure('processing comments.csv'):
-            number_of_processes = os.cpu_count()
+        with self.report.measure('processing comments.csv.standardized.csv'):
+            number_of_processes = min(os.cpu_count(), 4)
             self.report.report(f'starting {number_of_processes} processes')
-            csv_size = os.stat(f'{self.directory}/comments.csv').st_size
+            csv_size = os.stat(f'{self.directory}/comments.csv.standardized.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
                 offsets = []
-                with open(f'{self.directory}/comments.csv',
+                with open(f'{self.directory}/comments.csv.standardized.csv',
                           mode='rb') as f:
                     offsets.append(0)
 
@@ -332,7 +335,7 @@ class IndexCreator():
                     if terms_done % 100000 == 0:
                         print(f'Merged {terms_done} terms.')
 
-            self.seek_list = RecordDAWG('>I', self.seek_list)
+            self.seek_list = RecordDAWG('>Q', self.seek_list)
             self.seek_list.save(f'{self.directory}/seek_list.dawg')
 
             for f in index_files:
@@ -343,7 +346,7 @@ class IndexCreator():
                 os.remove(file_path)
 
         if compress_index:
-            self.huffman_compression(generate_encoding=True)
+            self.huffman_compression(generate_encoding=False)
 
         with self.report.measure('processing authors & articles'):
             with open(f'{self.directory}/authors_list.pickle', mode='wb') as f:
@@ -386,7 +389,13 @@ class IndexCreator():
             with self.report.measure('deriving huffman encoding'):
                 symbol_to_encoding_dict = Huffman.derive_encoding(
                     symbol_to_frequency_dict)
-
+            for key, value in symbol_to_encoding_dict.items():
+                assert(len(key) == 1)
+                symbol_to_encoding_list[ord(key[0])] = value
+            with open(f'{self.directory}/symbol_to_encoding_dict.pickle',
+                      mode='wb') as f:
+                pickle.dump(symbol_to_encoding_dict, f,
+                            pickle.HIGHEST_PROTOCOL)
         else:
             # optimal encoding for guardian
             # character distribution should be similar for all datasets
@@ -421,13 +430,25 @@ class IndexCreator():
                     self.compressed_seek_list.append(
                         (term, (offset, len(encoded_line))))
 
-                    self.report.progress(i, ' index lines compressed')
+                    self.report.progress(i, ' index lines compressed', 100000)
 
                     offset += len(encoded_line)
-
+            with open(f'{self.directory}/compressed_seek_list.pickle',
+                      mode='wb') as f:
+                pickle.dump(self.compressed_seek_list, f,
+                            pickle.HIGHEST_PROTOCOL)
             self.compressed_seek_list = \
-                RecordDAWG('>II', self.compressed_seek_list)
+                RecordDAWG('>QQ', self.compressed_seek_list)
             self.compressed_seek_list.save(
+                f'{self.directory}/compressed_seek_list.dawg')
+
+    def buildda(self):
+        with open(f'{self.directory}/compressed_seek_list.pickle',
+                  mode='rb') as f:
+            self.compressed_seek_list = pickle.load(f)
+        self.compressed_seek_list = \
+            RecordDAWG('>QQ', self.compressed_seek_list)
+        self.compressed_seek_list.save(
                 f'{self.directory}/compressed_seek_list.dawg')
 
 
@@ -436,8 +457,9 @@ if __name__ == '__main__':
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
     # index_creator.huffman_compression()
-    # with open(f'{data_directory}/symbol_to_encoding_dict.pickle',
-    #           mode='rb') as symbol_to_encoding_dict_file, \
+    # index_creator.buildda()
+    # with open(f'{data_directory}/huffman_tree.pickle',
+    #           mode='rb') as huffman_tree_file, \
     #         open(f'{data_directory}/compressed_index',
     #              mode='rb') as compressed_index_file:
     #     symbol_to_encoding_dict = pickle.load(symbol_to_encoding_dict_file)

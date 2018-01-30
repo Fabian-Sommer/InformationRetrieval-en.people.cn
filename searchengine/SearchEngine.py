@@ -7,6 +7,8 @@ import random
 import re
 import heapq
 import time
+import functools
+from functools import reduce
 
 import Stemmer
 import nltk.tokenize
@@ -40,14 +42,14 @@ class SearchEngine():
 
     def load_index(self, directory):
         if self.using_compression:
-            self.seek_list = RecordDAWG('>II')
+            self.seek_list = RecordDAWG('>QQ')
             self.seek_list.load(f'{directory}/compressed_seek_list.dawg')
             self.index_file = open(f'{directory}/compressed_index', mode='rb')
             with open(f'{directory}/symbol_to_encoding_dict.pickle',
                       mode='rb') as f:
                 self.symbol_to_encoding_dict = pickle.load(f)
         else:
-            self.seek_list = RecordDAWG('>I')
+            self.seek_list = RecordDAWG('>Q')
             self.seek_list.load(f'{directory}/seek_list.dawg')
             self.index_file = open(f'{directory}/index.csv',
                                    mode='r', encoding='utf-8')
@@ -68,6 +70,19 @@ class SearchEngine():
             self.reply_to_index = pickle.load(f)
         with open(f'{directory}/cid_to_offset.pickle', mode='rb') as f:
             self.cid_to_offset = pickle.load(f)
+
+    def load_collection_stem_count(self, stem):
+        if self.using_compression:
+            offset, size = self.seek_list[stem][0]
+            self.index_file.seek(offset)
+            binary_data = self.index_file.read(100)
+            return Huffman.decode_first(
+                binary_data, self.symbol_to_encoding_dict)
+        else:
+            self.index_file.seek(self.seek_list[stem][0])
+            posting_list = self.index_file.readline().rstrip('\n')
+            return int(posting_list.split(posting_list_separator,
+                                          maxsplit=2)[1])
 
     def load_posting_list_parts(self, stem):
         if self.using_compression:
@@ -175,6 +190,20 @@ class SearchEngine():
             return []
         phrase = match.group()[1:-1]
         new_query = phrase.replace(' ', ' AND ')
+        # reorder to have words with few matches first
+        split_phrase = new_query.split(' AND ')
+        occ_term_tuple_list = []
+        for term in split_phrase:
+            occ_term_tuple_list.append([self.load_collection_stem_count(
+                self.stemmer.stemWord(term.lower())), term])
+        occ_term_tuple_list.sort()
+        # stopword removal
+        term_list = map((lambda x: x[1]), list(filter((
+            lambda x:
+            x[0] < self.collection_term_count/100), occ_term_tuple_list)))
+        if term_list == []:
+            term_list = [occ_term_tuple_list[0][1]]
+        new_query = reduce((lambda x, y: x + ' AND ' + y), term_list)
         possible_matches = self.get_comment_offsets_for_query(new_query)
         return [offset for offset in possible_matches
                 if phrase in self.load_comment(offset).text.lower()]
@@ -448,7 +477,7 @@ class SearchEngine():
 
 if __name__ == '__main__':
     # TODO change to '.' before submitting
-    data_directory = 'data/enpeople'
+    data_directory = 'data/medium_guardian'
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
@@ -456,8 +485,8 @@ if __name__ == '__main__':
     for query in read_line_generator(args.query):
         if query.startswith('#'):  # TODO remove
             continue
-        with search_engine.report.measure('old search'):
-            search_engine.search(query, args.topN, args.printIdsOnly)
+        # with search_engine.report.measure('old search'):
+        #     search_engine.search(query, args.topN, args.printIdsOnly)
         with search_engine.report.measure('new search'):
             search_engine.search_new(query, args.topN, args.printIdsOnly)
         print('\n\n')

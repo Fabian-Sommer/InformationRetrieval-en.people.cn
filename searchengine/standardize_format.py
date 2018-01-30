@@ -5,11 +5,11 @@ import csv
 
 
 def read_line_generator(file_path):
-    with open(file_path) as target_file:
-        line = target_file.readline().rstrip('\n')
+    with open(file_path, 'rb') as target_file:
+        line = target_file.readline().decode(errors='ignore').rstrip('\n')
         while line:
             yield line
-            line = target_file.readline().rstrip('\n')
+            line = target_file.readline().decode(errors='ignore').rstrip('\n')
 
 
 def standardize_format(csv_file_path, expected_number_of_fields=None):
@@ -18,7 +18,8 @@ def standardize_format(csv_file_path, expected_number_of_fields=None):
         csv_writer = csv.writer(output_csv)
         for i, row in enumerate(csv_reader, start=1):
             # line 117 is broken in the guardian dataset ;)
-            if i == 117 and row[2] == 'comment_id':
+            # if i in (1, 117) and row[2] == 'comment_id':
+            if i == 116 and row[2] == 'comment_id':
                 continue
 
             if expected_number_of_fields is not None \
