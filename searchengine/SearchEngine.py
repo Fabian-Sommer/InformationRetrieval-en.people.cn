@@ -15,6 +15,7 @@ from dawg import RecordDAWG
 from Report import Report
 from Common import *
 import Huffman
+import QueryTree
 from IRWS_Argument_Parsing import args
 
 
@@ -150,6 +151,15 @@ class SearchEngine():
     def load_comment_from_cid(self, cid):
         return self.load_comment(self.cid_to_offset[cid])
 
+    def load_cid_only(self, offset):
+        self.comment_file.seek(offset)
+        csv_line_start = self.comment_file.read(8)
+        comma_position = csv_line_start.find(b',')
+        while comma_position == -1:
+            csv_line_start += self.comment_file.read(8)
+            comma_position = csv_line_start.find(b',')
+        return csv_line_start[:comma_position].decode()
+
     # returns offsets into comment file for all comments containing stem in
     # ascending order
     def get_offsets_for_stem(self, stem):
@@ -166,8 +176,8 @@ class SearchEngine():
         phrase = match.group()[1:-1]
         new_query = phrase.replace(' ', ' AND ')
         possible_matches = self.get_comment_offsets_for_query(new_query)
-        return [x for x in possible_matches
-                if phrase in self.load_comment(x).text.lower()]
+        return [offset for offset in possible_matches
+                if phrase in self.load_comment(offset).text.lower()]
 
     # returns offsets into comment file for all comments matching the query in
     # ascending order
@@ -268,45 +278,24 @@ class SearchEngine():
         return results
 
     def is_boolean_query(self, query):
-        return ' AND ' in query or ' OR ' in query or ' NOT ' in query
+        return ' AND ' in query or ' OR ' in query or 'NOT ' in query
 
-    def basic_search(self, query):
+    def basic_search(self, token_node):
         # search for a single query token
-        # TODO call this after properly splitting up query
 
-        if len(query) == 0:
-            return []
-
-        query = query.lower()
-
-        # phrase prefix query: 'new ye'*
-        if len(query) > 1 and query[-2] == "'":
+        if token_node.kind == 'phrase_prefix':  # phrase prefix query: 'hi ye'*
             # TODO this works but is toooo slow
-            assert(query[0] == "'" and query.count("'") == 2
-                   and query[-1] == '*')
-
-            parts = query[1:-2].rpartition(' ')
-            phrase_start = parts[0]
-            prefix = parts[2]
-            phrases = (f"'{phrase_start} {stem}'"
-                       for stem in self.seek_list.keys(prefix))
+            phrase_nodes = (
+                QueryTree.TokenNode(f"'{token_node.phrase_start} {stem}'")
+                for stem in self.seek_list.keys(token_node.prefix))
             result = set()
-            for phrase in phrases:
-                if phrase.count("'") > 2:
-                    print(phrase)
-                    print(phrase_start)
-                    print(prefix)
-                for offset in self.basic_search(phrase):
+            for phrase_node in phrase_nodes:
+                for offset in self.basic_search(phrase_node):
                     result.add(offset)
             return list(result)
-
-        # phrase query: 'european union'
-        elif query[-1] == "'":
-            assert(query[0] == "'" and query.count("'") == 2)
-
+        elif token_node.kind == 'phrase':  # phrase query: 'european union'
             stem_offset_size_list = []  # may contain duplicates!
-            phrase = query[1:-1]
-            for sentence in nltk.tokenize.sent_tokenize(phrase):
+            for sentence in nltk.tokenize.sent_tokenize(token_node.phrase):
                 for token in self.tokenizer.tokenize(sentence):
                     stem = self.stemmer.stemWord(token)
                     if stem not in self.seek_list:
@@ -319,36 +308,26 @@ class SearchEngine():
             result = []
             for offset in self.get_offsets_for_stem(smallest_stem):
                 comment = self.load_comment(offset)
-                if phrase in comment.text:
+                if token_node.phrase in comment.text:
                     result.append(offset)
             return result
-
-        # prefix query: isra*
-        elif query[-1] == '*':
-            assert(query.count('*') == 1)
-
-            prefix = query[:-1]
-            stems_with_prefix = self.seek_list.keys(prefix)
+        elif token_node.kind == 'prefix':  # prefix query: isra*
+            stems_with_prefix = self.seek_list.keys(token_node.prefix)
             result = []
             for stem in stems_with_prefix:
                 result.extend(self.get_offsets_for_stem(stem))
             return result
-
-        # ReplyTo query: ReplyTo:12345
-        elif 'ReplyTo:' in query:
-            assert(query.count('ReplyTo:') == 1 and
-                   query.startswith('ReplyTo:'))
-            target_cid = int(query.partition('ReplyTo:')[2])
-            if target_cid not in self.reply_to_index.keys():
+        elif token_node.kind == 'reply_to':  # ReplyTo query: ReplyTo:12345
+            if token_node.target_cid not in self.reply_to_index.keys():
                 return []
-            return self.reply_to_index[target_cid]
-
-        # keyword query: merkel
+            return self.reply_to_index[token_node.target_cid]
+        elif token_node.kind == 'keyword':  # keyword query: merkel
+            return self.get_offsets_for_stem(
+                self.stemmer.stemWord(token_node.keyword))
         else:
-            assert(' ' not in query)
-            return self.get_offsets_for_stem(self.stemmer.stemWord(query))
+            raise RuntimeError(f'unknown token_node.kind: {token_node.kind}')
 
-    def search(self, query, top_k=3, printIdsOnly=False):
+    def search(self, query, top_k=3, printIdsOnly=True):
         def show_comments(comment_iterable):
             if printIdsOnly:
                 cids = (str(comment.cid) for comment in comment_iterable)
@@ -359,8 +338,7 @@ class SearchEngine():
                         f'id: {comment.cid}, text:\n{comment.text}\n')
             self.report.report()
 
-        self.report.report('-------------------------------------------------')
-        self.report.report(f'searching for "{query}":')
+        self.report.report(f'\nsearching for "{query}":')
 
         comment_offsets = []
 
@@ -402,11 +380,11 @@ class SearchEngine():
         with self.report.measure('searching'):
             comment_offsets = self.get_comment_offsets_for_query(query)
 
-        if len(comment_offsets) == 0:
-            self.report.report('no comments matched the query')
-            return
         self.report.report(
             f'{len(comment_offsets)} comments matched the query')
+
+        if len(comment_offsets) == 0:
+            return
 
         with self.report.measure('calculating scores'):
             # min heap of tuples (score, comment_offset)
@@ -427,26 +405,59 @@ class SearchEngine():
         show_comments(self.load_comment(comment_offset)
                       for score, comment_offset in top_k_rated_comments)
 
+    def search_new(self, query, top_k=None, printIdsOnly=True):
+        self.report.report(f'\nsearching for "{query}":')
+
+        def print_comments(offset_iterable, top_k=None):
+            offset_iterable = offset_iterable if top_k is None \
+                else first_n(offset_iterable, top_k)
+            if printIdsOnly:
+                print(','.join((self.load_cid_only(offset)
+                                for offset in offset_iterable)))
+            else:
+                for offset in offset_iterable:
+                    comment = self.load_comment(offset)
+                    print(f'{comment.cid},{comment.text}')
+
+        query_tree_root = QueryTree.build(query)
+        if isinstance(query_tree_root, QueryTree.SpaceNode):  # non bool query
+            individual_results = (self.basic_search(child)
+                                  for child in query_tree_root.children)
+            result = frozenset().union(*individual_results)
+
+            print_comments(result, top_k)
+        else:  # bool query
+            or_result = set()
+            for and_node in query_tree_root.children:
+                and_result = None
+                to_be_removed = []
+                # TODO sort children by posting list size
+                for child in and_node.children:
+                    child_result = self.basic_search(child)
+                    if child.is_negated:
+                        to_be_removed.append(child_result)
+                    elif and_result is None:
+                        and_result = set(child_result)
+                    else:
+                        and_result.intersection_update(child_result)
+                and_result.difference_update(*to_be_removed)
+                or_result.update(and_result)
+
+            print_comments(or_result)
+
 
 if __name__ == '__main__':
     # TODO change to '.' before submitting
-    data_directory = 'data/small_guardian'
+    data_directory = 'data/enpeople'
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
 
-    topN = 3 if args.topN is None else args.topN
-
     for query in read_line_generator(args.query):
         if query.startswith('#'):  # TODO remove
             continue
-        search_engine.search(query, topN, args.printIdsOnly)
-        search_engine.report.all_time_measures()
+        with search_engine.report.measure('old search'):
+            search_engine.search(query, args.topN, args.printIdsOnly)
+        with search_engine.report.measure('new search'):
+            search_engine.search_new(query, args.topN, args.printIdsOnly)
         print('\n\n')
-
-    # print(search_engine.seek_list.keys('unreasonabl'))
-    # print(search_engine.seek_list['ye*'])
-
-    # for offset in search_engine.basic_search("'nothing unreasonabl'*"):
-    #     comment = search_engine.load_comment(offset)
-    #     print(comment.text)

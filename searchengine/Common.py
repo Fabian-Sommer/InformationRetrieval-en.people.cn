@@ -70,3 +70,10 @@ def binary_read_line_generator(target_file):
     while line:
         yield line
         line = target_file.readline().decode().rstrip('\n')
+
+
+def first_n(iterable, n):
+    for i, element in enumerate(iterable):
+        if i == n:
+            break
+        yield element

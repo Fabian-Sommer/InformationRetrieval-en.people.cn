@@ -52,7 +52,6 @@ def process_comments_file(directory, start_offset, end_offset,
                     comment[1].append(stem(token))
             comment_list.append(comment)
 
-            # TODO handle no parent
             parent_cid = int(csv_line[5]) if csv_line[5] != '' else -1
             if parent_cid != -1:
                 if parent_cid not in reply_to_index.keys():
@@ -61,7 +60,7 @@ def process_comments_file(directory, start_offset, end_offset,
                     reply_to_index[parent_cid].append(cid)
 
             previous_offset = f.tell()
-            if start_offset == 0 and len(comment_list) % 5000 == 0:  # TODO fix
+            if start_offset == 0 and len(comment_list) % 5000 == 0:
                 print(f'about {previous_offset / end_offset:7.2%} processed')
 
             if len(comment_list) == comments_per_output_file \
@@ -155,7 +154,7 @@ class IndexCreator():
             log_file_path=f'{directory}/log_IndexCreator.py.csv')
 
     # TODO fix or remove compress_index option
-    def create_index(self, skip_first_line=True, compress_index=True):
+    def create_index(self, compress_index=True):
         # read csv to create comment_list
 
         with self.report.measure('processing comments.csv'):
@@ -164,13 +163,9 @@ class IndexCreator():
             csv_size = os.stat(f'{self.directory}/comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
                 offsets = []
-                with open(f'{self.directory}/comments.csv', mode='rb') \
-                        as f:
-                    if skip_first_line:
-                        f.readline()
-                        offsets.append(f.tell())
-                    else:
-                        offsets.append(0)
+                with open(f'{self.directory}/comments.csv',
+                          mode='rb') as f:
+                    offsets.append(0)
 
                     for i in range(1, number_of_processes + 1):
                         f.seek(int(i * csv_size / number_of_processes))
