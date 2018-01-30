@@ -41,14 +41,14 @@ class SearchEngine():
 
     def load_index(self, directory):
         if self.using_compression:
-            self.seek_list = RecordDAWG('>II')
+            self.seek_list = RecordDAWG('>QQ')
             self.seek_list.load(f'{directory}/compressed_seek_list.dawg')
             self.index_file = open(f'{directory}/compressed_index', mode='rb')
             with open(f'{directory}/symbol_to_encoding_dict.pickle',
                       mode='rb') as f:
                 self.symbol_to_encoding_dict = pickle.load(f)
         else:
-            self.seek_list = RecordDAWG('>I')
+            self.seek_list = RecordDAWG('>Q')
             self.seek_list.load(f'{directory}/seek_list.dawg')
             self.index_file = open(f'{directory}/index.csv',
                                    mode='r', encoding='utf-8')

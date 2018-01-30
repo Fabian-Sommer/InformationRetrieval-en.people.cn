@@ -341,7 +341,7 @@ class IndexCreator():
                     if terms_done % 100000 == 0:
                         print(f'Merged {terms_done} terms.')
 
-            self.seek_list = RecordDAWG('>L', self.seek_list)
+            self.seek_list = RecordDAWG('>Q', self.seek_list)
             self.seek_list.save(f'{self.directory}/seek_list.dawg')
 
             for f in index_files:
@@ -402,21 +402,6 @@ class IndexCreator():
             with open(f'{self.directory}/symbol_to_encoding_dict.pickle', mode='wb') as f:
                 pickle.dump(symbol_to_encoding_dict, f, pickle.HIGHEST_PROTOCOL)
         else:
-            # encoding for guardian, character distribution should be similar in all datasets
-            symbol_to_encoding_list[7] = '1111'  # '\a'
-            symbol_to_encoding_list[44] = '001'  # ','
-            symbol_to_encoding_list[48] = '1000' # '0'
-            symbol_to_encoding_list[49] = '011'  # '1'
-            symbol_to_encoding_list[50] = '010'  # '2'
-            symbol_to_encoding_list[51] = '000'  # '3'
-            symbol_to_encoding_list[52] = '1110' # '4'
-            symbol_to_encoding_list[53] = '1101' # '5'
-            symbol_to_encoding_list[54] = '1100' # '6'
-            symbol_to_encoding_list[55] = '1011' # '7'
-            symbol_to_encoding_list[56] = '1010' # '8'
-            symbol_to_encoding_list[57] = '1001' # '9'
-
-        else:
             # optimal encoding for guardian
             # character distribution should be similar for all datasets
             symbol_to_encoding_dict = {
@@ -453,18 +438,28 @@ class IndexCreator():
                     self.report.progress(i, ' index lines compressed', 100000)
 
                     offset += len(encoded_line)
-
+            with open(f'{self.directory}/compressed_seek_list.pickle', mode='wb') as f:
+                pickle.dump(self.compressed_seek_list, f, pickle.HIGHEST_PROTOCOL)
             self.compressed_seek_list = \
-                RecordDAWG('>LL', self.compressed_seek_list)
+                RecordDAWG('>QQ', self.compressed_seek_list)
             self.compressed_seek_list.save(
                 f'{self.directory}/compressed_seek_list.dawg')
 
 
+    def buildda(self):
+        with open(f'{self.directory}/compressed_seek_list.pickle', mode='rb') as f:
+            self.compressed_seek_list = pickle.load(f)
+        self.compressed_seek_list = \
+                RecordDAWG('>QQ', self.compressed_seek_list)
+        self.compressed_seek_list.save(
+                f'{self.directory}/compressed_seek_list.dawg')
+        
 if __name__ == '__main__':
     data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
     index_creator = IndexCreator(data_directory)
     #index_creator.create_index()
-    index_creator.huffman_compression()
+    #index_creator.huffman_compression()
+    index_creator.buildda()
     # with open(f'{data_directory}/huffman_tree.pickle',
     #           mode='rb') as huffman_tree_file, \
     #         open(f'{data_directory}/compressed_index',
