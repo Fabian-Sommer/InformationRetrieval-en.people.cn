@@ -35,17 +35,16 @@ def process_comments_file(directory, start_offset, end_offset,
 
         tokenizer = nltk.tokenize.ToktokTokenizer()
         stemmer = Stemmer.Stemmer('english')
-        stem = functools.lru_cache(None)(stemmer.stemWord)  # TODO remove?
+        stem = functools.lru_cache(100)(stemmer.stemWord)  # TODO remove?
 
         for csv_line in csv_reader:
             if(not 6 <= len(csv_line) <= 8):
                 print(f'WARNING: len(csv_line) == {len(csv_line)}',
                       'which is not between 6 and 8')
-
-            #cid = int(csv_line[0])
+            cid = int(csv_line[0])
             #assert(cid not in cid_to_offset.keys())
 
-            #cid_to_offset[cid] = previous_offset
+            cid_to_offset[cid] = previous_offset
 
             comment = (previous_offset, [])
             comment_text_lower = csv_line[3].lower()
@@ -63,8 +62,6 @@ def process_comments_file(directory, start_offset, end_offset,
                     reply_to_index[parent_cid].append(cid)
 
             previous_offset = f.tell()
-            if start_offset == 0 and len(comment_list) % 5000 == 0:  # TODO fix
-                print(f'about {previous_offset / end_offset:7.2%} processed')
 
             if len(comment_list) == comments_per_output_file \
                     or previous_offset == end_offset:
@@ -117,10 +114,11 @@ def write_comments_to_temp_file(comment_list, file_name_prefix):
         for stem in sorted(all_comment_dict.keys()):
             if len(stem) > 1 and len(stem) <= 128:
                 posting_list = all_comment_dict[stem]
+                #posting_list.sort()
                 escaped_stem = stem.replace('"', '""')
                 line_string = f'"{escaped_stem}"' \
                     f'{posting_list_separator}{term_count_dict[stem]}'
-                for posting_list_parts in sorted(posting_list):
+                for posting_list_parts in posting_list:
                     line_string += \
                         f'{posting_list_separator}{posting_list_parts[0]},'
                     # list of token positions in comment
@@ -163,7 +161,7 @@ class IndexCreator():
         # read csv to create comment_list
 
         with self.report.measure('processing comments.csv'):
-            number_of_processes = min(os.cpu_count(), 4)
+            number_of_processes = min(os.cpu_count(), 2)
             self.report.report(f'starting {number_of_processes} processes')
             csv_size = os.stat(f'{self.directory}/comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
@@ -175,6 +173,7 @@ class IndexCreator():
                         offsets.append(f.tell())
                     else:
                         offsets.append(0)
+                    
 
                     for i in range(1, number_of_processes + 1):
                         f.seek(int(i * csv_size / number_of_processes))
@@ -446,20 +445,12 @@ class IndexCreator():
                 f'{self.directory}/compressed_seek_list.dawg')
 
 
-    def buildda(self):
-        with open(f'{self.directory}/compressed_seek_list.pickle', mode='rb') as f:
-            self.compressed_seek_list = pickle.load(f)
-        self.compressed_seek_list = \
-                RecordDAWG('>QQ', self.compressed_seek_list)
-        self.compressed_seek_list.save(
-                f'{self.directory}/compressed_seek_list.dawg')
-        
 if __name__ == '__main__':
     data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
     index_creator = IndexCreator(data_directory)
-    #index_creator.create_index()
+    index_creator.create_index(skip_first_line=False, compress_index=True)
     #index_creator.huffman_compression()
-    index_creator.buildda()
+    #index_creator.buildda()
     # with open(f'{data_directory}/huffman_tree.pickle',
     #           mode='rb') as huffman_tree_file, \
     #         open(f'{data_directory}/compressed_index',
