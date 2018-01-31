@@ -4,6 +4,7 @@ from bitarray import bitarray as BitArray
 import heapq
 from Common import *
 
+
 class Node():
     def init_leaf(self, symbol, weight):
         self.symbol = symbol
@@ -86,6 +87,7 @@ def decode(binary_data, symbol_to_encoding_dict):
     decoded_chars = bit_array[padding+1:].decode(symbol_to_encoding_dict)
     return ''.join(decoded_chars)
 
+
 def decode_first(binary_data, symbol_to_encoding_dict):
     padding = 0
     bit_array = BitArray()
@@ -94,22 +96,6 @@ def decode_first(binary_data, symbol_to_encoding_dict):
         padding += 1
     decoded_chars = bit_array[padding+1:].decode(symbol_to_encoding_dict)
     return int(''.join(decoded_chars).partition(posting_list_separator)[0])
-
-    """
-    padding = 0
-    bit_array = BitArray()
-    bit_array.frombytes(binary_data)
-    while bool(bit_array[padding]):
-        padding += 1
-    separator = symbol_to_encoding_dict['\a']
-    separator_len = len(separator)
-    off = 0
-    while bit_array[padding+1+off:padding+1+off+separator_len] != separator:
-        off += 1
-        assert(off < 90)
-    decoded_chars = bit_array[padding+1:padding+1+off].decode(symbol_to_encoding_dict)
-    return int(''.join(decoded_chars))
-    """
 
 
 if __name__ == '__main__':

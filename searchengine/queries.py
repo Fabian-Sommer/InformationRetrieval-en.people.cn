@@ -10,5 +10,5 @@ trump AND putin AND merkel AND xi
 'guardians of the galaxy'
 eu OR 'european union'
 'new ye'*
-ReplyTo:107701851 AND 'silicon valley'
 merkel NOT chancel*
+ReplyTo:107701851 AND 'silicon valley'

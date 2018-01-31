@@ -100,11 +100,14 @@ class SearchEngine():
     # returns score based on natural language model with dirichlet smoothing
     # query_terms: list of query terms, stemmed and filtered
     # comment_offsets: list of offsets of comments into comment file
-    def get_dirichlet_smoothed_score(self, query_stems, comment_offsets,
+    def get_dirichlet_smoothed_score(self, query_terms, comment_offsets,
                                      mu=1500):
-        score_list = [0 for x in comment_offsets]
-        for query_stem in query_stems:
-            if query_stem not in self.seek_list:
+        ranked_comments = [[0, offset] for offset in comment_offsets]
+        for query_term in query_terms:
+            query_stem = self.stemmer.stemWord(query_term)
+            if query_stem not in self.seek_list or \
+                    self.seek_list[query_stem][0][1] > \
+                    self.collection_term_count / 100:
                 continue
             posting_list_parts = self.load_posting_list_parts(query_stem)
             query_term_count = int(posting_list_parts[1])
@@ -118,7 +121,7 @@ class SearchEngine():
                         and first_occurence >
                         comment_offsets[comment_offsets_index]):
                     # term not found -> 0 occurences in comment
-                    score_list[comment_offsets_index] += math.log(
+                    ranked_comments[comment_offsets_index][0] += math.log(
                         (mu * query_term_count / self.collection_term_count)
                         / (self.comment_term_count_dict[comment_offsets[
                             comment_offsets_index]] + mu))
@@ -128,7 +131,7 @@ class SearchEngine():
                         and first_occurence ==
                         comment_offsets[comment_offsets_index]):
                     fD_query_term = len_occurrences - 1
-                    score_list[comment_offsets_index] += math.log(
+                    ranked_comments[comment_offsets_index][0] += math.log(
                         (fD_query_term + (mu * query_term_count
                                           / self.collection_term_count))
                         / (self.comment_term_count_dict[comment_offsets[
@@ -136,13 +139,13 @@ class SearchEngine():
                     comment_offsets_index += 1
             while comment_offsets_index < len(comment_offsets):
                 # no matches found
-                score_list[comment_offsets_index] += math.log(
+                ranked_comments[comment_offsets_index][0] += math.log(
                     (mu * query_term_count / self.collection_term_count)
                     / (self.comment_term_count_dict[comment_offsets[
                         comment_offsets_index]] + mu))
                 comment_offsets_index += 1
 
-        return score_list
+        return ranked_comments
 
     # load comment from given offset into comment file
     def load_comment(self, offset):
@@ -309,37 +312,45 @@ class SearchEngine():
     def is_boolean_query(self, query):
         return ' AND ' in query or ' OR ' in query or 'NOT ' in query
 
+    def phrase_query(self, phrase, suffix=''):
+        if ' ' not in phrase and suffix == '':
+            return self.basic_search(phrase)
+
+        stem_offset_size_list = []  # may contain duplicates!
+        for sentence in nltk.tokenize.sent_tokenize(phrase):
+            for token in self.tokenizer.tokenize(sentence):
+                stem = self.stemmer.stemWord(token)
+                if stem not in self.seek_list:
+                    continue
+                stem_offset_size_list.append((stem, self.seek_list[stem]))
+
+        # sort by posting_list size
+        stem_offset_size_list.sort(key=lambda t: t[1][0][1])
+        smallest_stem = stem_offset_size_list[0][0]
+        second_smallest_stem = stem_offset_size_list[1][0] \
+            if len(stem_offset_size_list) > 1 and \
+            stem_offset_size_list[1][1][0][1] < \
+            self.collection_term_count / 100 else ''
+        result = []
+        phrase_to_check = phrase if suffix == '' else f'{phrase} {suffix}'
+        offsets = set(self.get_offsets_for_stem(smallest_stem))
+        if second_smallest_stem != '':
+            offsets.intersection_update(
+                self.get_offsets_for_stem(second_smallest_stem))
+        for offset in offsets:
+            comment = self.load_comment(offset)
+            if phrase_to_check in comment.text.lower():
+                result.append(offset)
+        return result
+
     def basic_search(self, token_node):
         # search for a single query token
 
         if token_node.kind == 'phrase_prefix':  # phrase prefix query: 'hi ye'*
-            # TODO this works but is toooo slow
-            phrase_nodes = (
-                QueryTree.TokenNode(f"'{token_node.phrase_start} {stem}'")
-                for stem in self.seek_list.keys(token_node.prefix))
-            result = set()
-            for phrase_node in phrase_nodes:
-                for offset in self.basic_search(phrase_node):
-                    result.add(offset)
-            return list(result)
+            return self.phrase_query(
+                token_node.phrase_start, token_node.prefix)
         elif token_node.kind == 'phrase':  # phrase query: 'european union'
-            stem_offset_size_list = []  # may contain duplicates!
-            for sentence in nltk.tokenize.sent_tokenize(token_node.phrase):
-                for token in self.tokenizer.tokenize(sentence):
-                    stem = self.stemmer.stemWord(token)
-                    if stem not in self.seek_list:
-                        continue
-                    stem_offset_size_list.append((stem, self.seek_list[stem]))
-
-            # sort by posting_list size
-            stem_offset_size_list.sort(key=lambda t: t[1][0][1])
-            smallest_stem = stem_offset_size_list[0][0]
-            result = []
-            for offset in self.get_offsets_for_stem(smallest_stem):
-                comment = self.load_comment(offset)
-                if token_node.phrase in comment.text:
-                    result.append(offset)
-            return result
+            return self.phrase_query(token_node.phrase)
         elif token_node.kind == 'prefix':  # prefix query: isra*
             stems_with_prefix = self.seek_list.keys(token_node.prefix)
             result = []
@@ -349,7 +360,9 @@ class SearchEngine():
         elif token_node.kind == 'reply_to':  # ReplyTo query: ReplyTo:12345
             if token_node.target_cid not in self.reply_to_index.keys():
                 return []
-            return self.reply_to_index[token_node.target_cid]
+
+            return [self.cid_to_offset[cid]
+                    for cid in self.reply_to_index[token_node.target_cid]]
         elif token_node.kind == 'keyword':  # keyword query: merkel
             return self.get_offsets_for_stem(
                 self.stemmer.stemWord(token_node.keyword))
@@ -358,6 +371,9 @@ class SearchEngine():
 
     def search(self, query, top_k=3, printIdsOnly=True):
         def show_comments(comment_iterable):
+            comment_iterable = list(comment_iterable)
+            print(len(comment_iterable))
+            return
             if printIdsOnly:
                 cids = (str(comment.cid) for comment in comment_iterable)
                 self.report.report(','.join(cids))
@@ -416,30 +432,29 @@ class SearchEngine():
             return
 
         with self.report.measure('calculating scores'):
-            # min heap of tuples (score, comment_offset)
-            top_k_rated_comments = []
+            # rated_comment is a tuple of (score, offset)
+            rated_comments = self.get_dirichlet_smoothed_score(
+                query_terms, comment_offsets)
+            if top_k is not None and len(rated_comments) > top_k:
+                top_k_rated_comments = rated_comments[:top_k]
+                heapq.heapify(top_k_rated_comments)
+                for rated_comment in rated_comments[top_k:]:
+                    heapq.heappushpop(top_k_rated_comments, rated_comment)
+                result = top_k_rated_comments
+            else:
+                result = rated_comments
 
-            scores = self.get_dirichlet_smoothed_score(query_terms,
-                                                       comment_offsets)
-            for i, comment_offset in enumerate(comment_offsets):
-                score = scores[i]
-                if len(top_k_rated_comments) < top_k:
-                    heapq.heappush(
-                        top_k_rated_comments, (score, comment_offset))
-                else:
-                    heapq.heappushpop(top_k_rated_comments,
-                                      (score, comment_offset))
+            result.sort(key=lambda x: x[0], reverse=True)
 
-        top_k_rated_comments.sort(key=lambda x: x[0], reverse=True)
-        show_comments(self.load_comment(comment_offset)
-                      for score, comment_offset in top_k_rated_comments)
+        # show_comments(self.load_comment(comment_offset)
+        #               for score, comment_offset in rated_comments)
+        print(len(result))
 
     def search_new(self, query, top_k=None, printIdsOnly=True):
         self.report.report(f'\nsearching for "{query}":')
 
-        def print_comments(offset_iterable, top_k=None):
-            offset_iterable = offset_iterable if top_k is None \
-                else first_n(offset_iterable, top_k)
+        def print_comments(offset_iterable):
+            offset_iterable = list(offset_iterable)
             if printIdsOnly:
                 print(','.join((self.load_cid_only(offset)
                                 for offset in offset_iterable)))
@@ -449,44 +464,65 @@ class SearchEngine():
                     print(f'{comment.cid},{comment.text}')
 
         query_tree_root = QueryTree.build(query)
-        if isinstance(query_tree_root, QueryTree.SpaceNode):  # non bool query
-            individual_results = (self.basic_search(child)
-                                  for child in query_tree_root.children)
-            result = frozenset().union(*individual_results)
-
-            print_comments(result, top_k)
-        else:  # bool query
+        if query_tree_root.is_boolean_query:
             or_result = set()
-            for and_node in query_tree_root.children:
-                and_result = None
-                to_be_removed = []
-                # TODO sort children by posting list size
-                for child in and_node.children:
-                    child_result = self.basic_search(child)
-                    if child.is_negated:
-                        to_be_removed.append(child_result)
-                    elif and_result is None:
-                        and_result = set(child_result)
-                    else:
-                        and_result.intersection_update(child_result)
-                and_result.difference_update(*to_be_removed)
-                or_result.update(and_result)
+            with self.report.measure('searching'):
+                for and_node in query_tree_root.children:
+                    and_result = None
+                    to_be_removed = []
+                    for child in and_node.children:
+                        child_result = self.basic_search(child)
+                        if child.is_negated:
+                            to_be_removed.append(child_result)
+                        elif and_result is None:
+                            and_result = set(child_result)
+                        else:
+                            and_result.intersection_update(child_result)
+                    and_result.difference_update(*to_be_removed)
+                    or_result.update(and_result)
 
             print_comments(or_result)
+        else:  # non bool query
+            with self.report.measure('searching'):
+                children_results = (self.basic_search(child)
+                                    for child in query_tree_root.children)
+                comment_offsets = list(frozenset().union(*children_results))
+
+            with self.report.measure('calculating scores'):
+                # rated_comment is a tuple of (score, offset)
+                rated_comments = self.get_dirichlet_smoothed_score(
+                    query_tree_root.query_terms, comment_offsets)
+                if top_k is not None and len(rated_comments) > top_k:
+                    top_k_rated_comments = \
+                        rated_comments[:top_k]
+                    heapq.heapify(top_k_rated_comments)
+                    for rated_comment in rated_comments[top_k:]:
+                        heapq.heappushpop(top_k_rated_comments, rated_comment)
+                    result = top_k_rated_comments
+                else:
+                    result = rated_comments
+
+                result.sort(key=lambda x: x[0], reverse=True)
+
+            print_comments((offset for score, offset in result))
 
 
 if __name__ == '__main__':
     # TODO change to '.' before submitting
-    data_directory = 'data/medium_guardian'
+    data_directory = 'data/small_guardian'
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
 
-    for query in read_line_generator(args.query):
-        if query.startswith('#'):  # TODO remove
+    for query in open(args.query):
+        query = query.strip()
+        # TODO remove
+        if query.startswith('#'):
             continue
-        # with search_engine.report.measure('old search'):
-        #     search_engine.search(query, args.topN, args.printIdsOnly)
+        if query.startswith('!'):
+            query = query.partition('!')[2].strip()
+            with search_engine.report.measure('old search'):
+                search_engine.search(query, args.topN, args.printIdsOnly)
         with search_engine.report.measure('new search'):
             search_engine.search_new(query, args.topN, args.printIdsOnly)
         print('\n\n')

@@ -28,14 +28,13 @@ def process_comments_file(directory, start_offset, end_offset,
     file_number = 0
     reply_to_index = {}
     cid_to_offset = {}
-    with open(f'{directory}/comments.csv.standardized.csv', mode='rb') as f:
+    with open(f'{directory}/comments.csv', mode='rb') as f:
         f.seek(start_offset)
         previous_offset = start_offset
         csv_reader = csv.reader(binary_read_line_generator(f))
 
         tokenizer = nltk.tokenize.ToktokTokenizer()
         stemmer = Stemmer.Stemmer('english')
-        stem = functools.lru_cache(None)(stemmer.stemWord)  # TODO remove?
 
         for csv_line in csv_reader:
             if(not 6 <= len(csv_line) <= 8):
@@ -51,7 +50,7 @@ def process_comments_file(directory, start_offset, end_offset,
             comment_text_lower = csv_line[3].lower()
             for sentence in nltk.tokenize.sent_tokenize(comment_text_lower):
                 for token in tokenizer.tokenize(sentence):
-                    comment[1].append(stem(token))
+                    comment[1].append(stemmer.stemWord(token))
             comment_list.append(comment)
 
             parent_cid = int(csv_line[5]) if csv_line[5] != '' else -1
@@ -150,23 +149,22 @@ def create_list_from_csv(csv_file_path):
 class IndexCreator():
     def __init__(self, directory):
         self.directory = directory
-        assert(os.path.isfile(f'{self.directory}/comments.csv.standardized.csv'))
+        assert(os.path.isfile(f'{self.directory}/comments.csv'))
         sys.setrecursionlimit(10000)
         self.report = Report(
             quiet_mode=__name__ != '__main__',
             log_file_path=f'{directory}/log_IndexCreator.py.csv')
 
-    # TODO fix or remove compress_index option
-    def create_index(self, compress_index=True):
+    def create_index(self):
         # read csv to create comment_list
 
-        with self.report.measure('processing comments.csv.standardized.csv'):
+        with self.report.measure('processing comments.csv'):
             number_of_processes = min(os.cpu_count(), 4)
             self.report.report(f'starting {number_of_processes} processes')
-            csv_size = os.stat(f'{self.directory}/comments.csv.standardized.csv').st_size
+            csv_size = os.stat(f'{self.directory}/comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
                 offsets = []
-                with open(f'{self.directory}/comments.csv.standardized.csv',
+                with open(f'{self.directory}/comments.csv',
                           mode='rb') as f:
                     offsets.append(0)
 
@@ -345,8 +343,7 @@ class IndexCreator():
                 file_path = file_prefix + '_index.csv'
                 os.remove(file_path)
 
-        if compress_index:
-            self.huffman_compression(generate_encoding=False)
+        self.huffman_compression(generate_encoding=False)
 
         with self.report.measure('processing authors & articles'):
             with open(f'{self.directory}/authors_list.pickle', mode='wb') as f:

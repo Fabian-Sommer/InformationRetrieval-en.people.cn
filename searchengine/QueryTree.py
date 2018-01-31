@@ -7,35 +7,40 @@ class TokenNode():
     def __init__(self, raw_query_token):
         assert(len(raw_query_token) > 0)
         self.raw_query_token = raw_query_token
-        parts = raw_query_token.rpartition('NOT ')
+        parts = raw_query_token.strip().rpartition('NOT ')
         self.is_negated = parts[1] == 'NOT '
-        query_token = parts[2]
+        query_token = parts[2].lower()
         # self.result = []
         if len(query_token) > 1 and query_token[-2] == "'":
             assert(query_token[0] == "'" and query_token.count("'") == 2
                    and query_token[-1] == '*')
             self.kind = 'phrase_prefix'
             parts = query_token[1:-2].rpartition(' ')
-            self.phrase_start = parts[0].lower()
-            self.prefix = parts[2].lower()
+            self.phrase_start = parts[0]
+            self.prefix = parts[2]
+            self.query_token = query_token[1:-2]
         elif query_token[-1] == "'":
             assert(query_token[0] == "'" and query_token.count("'") == 2)
             self.kind = 'phrase'
-            self.phrase = query_token[1:-1].lower()
+            self.phrase = query_token[1:-1]
+            self.query_token = self.phrase
         elif query_token[-1] == '*':
             assert(query_token.count('*') == 1)
             self.kind = 'prefix'
-            self.prefix = query_token[:-1].lower()
-        elif 'ReplyTo:' in query_token:
-            assert(query_token.count('ReplyTo:') == 1 and
-                   query_token.startswith('ReplyTo:'))
+            self.prefix = query_token[:-1]
+            self.query_token = self.prefix
+        elif 'replyto:' in query_token:
+            assert(query_token.count('replyto:') == 1 and
+                   query_token.startswith('replyto:'))
             self.kind = 'reply_to'
-            self.target_cid = int(query_token.partition('ReplyTo:')[2])
+            self.target_cid = int(query_token.partition('replyto:')[2])
+            self.query_token = ''
         else:
             assert(' ' not in query_token)
             self.kind = 'keyword'
-            self.keyword = query_token.lower()
-
+            self.keyword = query_token
+            self.query_token = self.keyword
+        pass
     # def resolve(self, search_function):
     #     pass
 
@@ -105,7 +110,10 @@ class SpaceNode():
         assert(len(children) >= 1)
         self.children = children
         self.is_negated = False
-        # self.result = []
+        self.query_terms = []
+        for child in children:
+            if child.query_token != '':
+                self.query_terms.extend(child.query_token.split(' '))
 
     def __repr__(self):
         return f'SpaceNode({self.children})'
@@ -120,17 +128,16 @@ def build(query):
         assert(query.count("'") % 2 == 0)
 
         # initialize, create TokenNodes
-        query_phrase_list = query.split("'")
-        for i, part in enumerate(query_phrase_list):
-            if i % 2 == 1:
-                query_list.append(TokenNode(f"'{part}'"))
-                continue
-
-            for query_token in re.split('(?<!NOT) ', part):
-                if query_token in ('AND', 'OR'):
-                    query_list.append(query_token)
-                elif query_token != '':
-                    query_list.append(TokenNode(query_token))
+        for match in re.findall("([^']+)|('[^']+'\*?)", query):
+            print(match[0], match[1])
+            if match[1] != '':  # second capture group ('[^']+'\*?)
+                query_list.append(TokenNode(match[1]))
+            else:  # first capture group ([^']+)
+                for query_token in re.findall('(?:NOT )?[^ ]+', match[0]):
+                    if query_token in ('AND', 'OR'):
+                        query_list.append(query_token)
+                    else:
+                        query_list.append(TokenNode(query_token))
 
         # create AndNodes
         query_list_AND = []
@@ -144,19 +151,18 @@ def build(query):
             nodes_connected_by_AND = list_AND[::2]
             query_list_AND.append(AndNode(nodes_connected_by_AND))
         root_node = OrNode(query_list_AND)
+        root_node.is_boolean_query = True
 
     else:  # non boolean query
         query_list = []
-        query_phrase_list = query.split("'")
-        for i, part in enumerate(query_phrase_list):
-            if i % 2 == 1:
-                query_list.append(TokenNode(f"'{part}'"))
-                continue
-
-            for query_token in part.split(' '):
-                if query_token != '':
+        for match in re.findall("([^']+)|('[^']+'\*?)", query):
+            if match[1] != '':  # second capture group ('[^']+'\*?)
+                query_list.append(TokenNode(match[1]))
+            else:  # first capture group ([^']+)
+                for query_token in re.findall('[^ ]+', match[0]):
                     query_list.append(TokenNode(query_token))
         root_node = SpaceNode(query_list)
+        root_node.is_boolean_query = False
     return root_node
 
 
