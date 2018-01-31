@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import pickle
-import heapq
 import io
 import os
 import functools
@@ -9,6 +8,7 @@ import sys
 import multiprocessing
 import csv
 from collections import Counter
+
 import numpy
 import Stemmer
 import nltk.tokenize

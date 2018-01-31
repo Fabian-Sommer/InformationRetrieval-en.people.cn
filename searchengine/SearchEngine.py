@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
 
-import string
 import pickle
 import math
-import random
-import re
 import heapq
-import time
-import functools
-import sys
 import numpy
-from functools import reduce
-from operator import itemgetter
 
 import Stemmer
 import nltk.tokenize
@@ -25,8 +17,7 @@ from IRWS_Argument_Parsing import args
 
 
 class SearchEngine():
-
-    def __init__(self, using_compression=True):
+    def __init__(self):
         self.seek_list = None
         self.comment_file = None
         self.index_file = None
@@ -42,22 +33,15 @@ class SearchEngine():
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
         self.tokenizer = nltk.tokenize.ToktokTokenizer()
-        self.using_compression = using_compression
         self.report = Report()
 
     def load_index(self, directory):
-        if self.using_compression:
-            self.seek_list = RecordDAWG('>QQ')
-            self.seek_list.load(f'{directory}/compressed_seek_list.dawg')
-            self.index_file = open(f'{directory}/compressed_index', mode='rb')
-            with open(f'{directory}/symbol_to_encoding_dict.pickle',
-                      mode='rb') as f:
-                self.symbol_to_encoding_dict = pickle.load(f)
-        else:
-            self.seek_list = RecordDAWG('>Q')
-            self.seek_list.load(f'{directory}/seek_list.dawg')
-            self.index_file = open(f'{directory}/index.csv',
-                                   mode='r', encoding='utf-8')
+        self.seek_list = RecordDAWG('>QQ')
+        self.seek_list.load(f'{directory}/compressed_seek_list.dawg')
+        self.index_file = open(f'{directory}/compressed_index', mode='rb')
+        with open(f'{directory}/symbol_to_encoding_dict.pickle',
+                  mode='rb') as f:
+            self.symbol_to_encoding_dict = pickle.load(f)
         self.comment_offsets = numpy.load(
             f'{directory}/comment_offsets.npy', mmap_mode=None)
         self.comment_term_counts = numpy.load(
@@ -77,31 +61,13 @@ class SearchEngine():
         self.comment_offsets_cid = numpy.load(
             f'{directory}/comment_offsets_cid.npy', mmap_mode='r')
 
-    def load_collection_stem_count(self, stem):
-        if self.using_compression:
-            offset, size = self.seek_list[stem][0]
-            self.index_file.seek(offset)
-            binary_data = self.index_file.read(100)
-            return Huffman.decode_first(
-                binary_data, self.symbol_to_encoding_dict)
-        else:
-            self.index_file.seek(self.seek_list[stem][0])
-            posting_list = self.index_file.readline().rstrip('\n')
-            return int(posting_list.split(posting_list_separator,
-                                          maxsplit=2)[1])
-
     def load_posting_list_parts(self, stem):
-        if self.using_compression:
-            offset, size = self.seek_list[stem][0]
-            self.index_file.seek(offset)
-            binary_data = self.index_file.read(size)
-            decoded_posting_list = Huffman.decode(
-                binary_data, self.symbol_to_encoding_dict)
-            return [stem] + decoded_posting_list.split(posting_list_separator)
-        else:
-            self.index_file.seek(self.seek_list[stem][0])
-            posting_list = self.index_file.readline().rstrip('\n')
-            return posting_list.split(posting_list_separator)
+        offset, size = self.seek_list[stem][0]
+        self.index_file.seek(offset)
+        binary_data = self.index_file.read(size)
+        decoded_posting_list = Huffman.decode(
+            binary_data, self.symbol_to_encoding_dict)
+        return [stem] + decoded_posting_list.split(posting_list_separator)
 
     def get_comment_term_count(self, comment_offset):
         return self.comment_term_counts[numpy.searchsorted(
@@ -199,132 +165,6 @@ class SearchEngine():
         posting_list_parts = self.load_posting_list_parts(stem)
         return [int(x.partition(',')[0]) for x in posting_list_parts[2:]]
 
-    def get_comment_offsets_for_phrase_query(self, query):
-        match = re.search(r'\'[^"]*\'', query)
-        if not match:
-            self.report.report('invalid phrase query')
-            return []
-        phrase = match.group()[1:-1]
-        new_query = phrase.replace(' ', ' AND ')
-        # reorder to have words with few matches first
-        split_phrase = new_query.split(' AND ')
-        occ_term_tuple_list = []
-        for term in split_phrase:
-            occ_term_tuple_list.append([self.load_collection_stem_count(
-                self.stemmer.stemWord(term.lower())), term])
-        occ_term_tuple_list.sort()
-        # stopword removal
-        term_list = map((lambda x: x[1]), list(filter((
-            lambda x:
-            x[0] < self.collection_term_count/100), occ_term_tuple_list)))
-        if term_list == []:
-            term_list = [occ_term_tuple_list[0][1]]
-        new_query = reduce((lambda x, y: x + ' AND ' + y), term_list)
-        possible_matches = self.get_comment_offsets_for_query(new_query)
-        return [offset for offset in possible_matches
-                if phrase in self.load_comment(offset).text.lower()]
-
-    # returns offsets into comment file for all comments matching the query in
-    # ascending order
-    def get_comment_offsets_for_query(self, query):
-        if "'" in query:
-            # can only search for whole query as one phrase
-            assert(query[0] == "'" == query[-1])
-            return self.get_comment_offsets_for_phrase_query(query)
-
-        if ' NOT ' in query:
-            split_query = query.partition(' NOT ')
-            return self.search_boolean_NOT(split_query[0], split_query[2])
-        if ' AND ' in query:
-            split_query = query.partition(' AND ')
-            return self.search_boolean_AND(split_query[0], split_query[2])
-        if ' OR ' in query:
-            split_query = query.partition(' OR ')
-            return self.search_boolean_OR(split_query[0], split_query[2])
-
-        # assume we are left with single term at this point
-        assert(' ' not in query)
-
-        if query[-1] == '*':
-            stems = self.seek_list.keys(query[:-1].lower())
-            result = []
-            for stem in stems:
-                result.extend(self.get_offsets_for_stem(stem))
-            return result
-        else:
-            return self.get_offsets_for_stem(
-                self.stemmer.stemWord(query.lower()))
-
-    # BOOLEAN QUERIES
-
-    def search_boolean_NOT(self, query1, query2):
-        results = []
-        q1_results = self.get_comment_offsets_for_query(query1)
-        q2_results = self.get_comment_offsets_for_query(query2)
-        i = 0
-        j = 0
-        # should be equivalent:
-        # results = [result for result in q1_results
-        #            if result not in q2_results]
-        while i < len(q1_results):
-            if j == len(q2_results):
-                results.append(q1_results[i])
-                i += 1
-            elif q1_results[i] < q2_results[j]:
-                results.append(q1_results[i])
-                i += 1
-            elif q1_results[i] > q2_results[j]:
-                j += 1
-            else:
-                i += 1
-                j += 1
-        return results
-
-    def search_boolean_AND(self, query1, query2):
-        results = []
-        q1_results = self.get_comment_offsets_for_query(query1)
-        q2_results = self.get_comment_offsets_for_query(query2)
-        i = 0
-        j = 0
-        while i < len(q1_results) and j < len(q2_results):
-            if q1_results[i] < q2_results[j]:
-                i += 1
-            elif q1_results[i] > q2_results[j]:
-                j += 1
-            else:
-                results.append(q1_results[i])
-                i += 1
-                j += 1
-        return results
-
-    def search_boolean_OR(self, query1, query2):
-        results = []
-        q1_results = self.get_comment_offsets_for_query(query1)
-        q2_results = self.get_comment_offsets_for_query(query2)
-        i = 0
-        j = 0
-        while i < len(q1_results) or j < len(q2_results):
-            if i == len(q1_results):
-                results.append(q2_results[j])
-                j += 1
-            elif j == len(q2_results):
-                results.append(q1_results[i])
-                i += 1
-            elif q1_results[i] < q2_results[j]:
-                results.append(q1_results[i])
-                i += 1
-            elif q1_results[i] > q2_results[j]:
-                results.append(q2_results[j])
-                j += 1
-            else:
-                results.append(q1_results[i])
-                i += 1
-                j += 1
-        return results
-
-    def is_boolean_query(self, query):
-        return ' AND ' in query or ' OR ' in query or 'NOT ' in query
-
     def phrase_query(self, phrase, suffix=''):
         if ' ' not in phrase and suffix == '':
             return self.basic_search(phrase)
@@ -382,88 +222,7 @@ class SearchEngine():
         else:
             raise RuntimeError(f'unknown token_node.kind: {token_node.kind}')
 
-    def search(self, query, top_k=3, printIdsOnly=True):
-        def show_comments(comment_iterable):
-            comment_iterable = list(comment_iterable)
-            print(len(comment_iterable))
-            return
-            if printIdsOnly:
-                cids = (str(comment.cid) for comment in comment_iterable)
-                self.report.report(','.join(cids))
-            else:
-                for comment in comment_iterable:
-                    self.report.report(
-                        f'id: {comment.cid}, text:\n{comment.text}\n')
-            self.report.report()
-
-        self.report.report(f'\nsearching for "{query}":')
-
-        comment_offsets = []
-
-        # boolean query
-        if self.is_boolean_query(query):
-            with self.report.measure('searching'):
-                comment_offsets = self.get_comment_offsets_for_query(query)
-            self.report.report(
-                f'{len(comment_offsets)} comments matched the query')
-            show_comments(map(self.load_comment, comment_offsets))
-            return
-
-        # ReplyTo query
-        if query.startswith("ReplyTo:"):
-            target_cid = int(query.partition("ReplyTo:")[2])
-            if target_cid not in self.reply_to_index.keys():
-                self.report.report(f'comment with id {target_cid} does not '
-                                   'exist or it has no replies')
-                return
-            self.report.report("target comment:")
-            show_comments((self.load_comment_from_cid(target_cid),))
-            replies = []
-            with self.report.measure('searching'):
-                replies = self.reply_to_index[target_cid]
-            self.report.report(f'found {len(replies)} replies:')
-            show_comments(map(self.load_comment_from_cid, replies[:top_k]))
-            return
-
-        if "'" in query:
-            # phrase query
-            assert(query[0] == "'" == query[-1])
-            query_terms = [query.lower()]
-        else:
-            # keyword query
-            query = query.replace(' ', ' OR ')
-            query_terms = [self.stemmer.stemWord(term.lower())
-                           for term in query.split(' OR ')]
-
-        with self.report.measure('searching'):
-            comment_offsets = self.get_comment_offsets_for_query(query)
-
-        self.report.report(
-            f'{len(comment_offsets)} comments matched the query')
-
-        if len(comment_offsets) == 0:
-            return
-
-        with self.report.measure('calculating scores'):
-            # rated_comment is a tuple of (score, offset)
-            rated_comments = self.get_dirichlet_smoothed_score(
-                query_terms, comment_offsets)
-            if top_k is not None and len(rated_comments) > top_k:
-                top_k_rated_comments = rated_comments[:top_k]
-                heapq.heapify(top_k_rated_comments)
-                for rated_comment in rated_comments[top_k:]:
-                    heapq.heappushpop(top_k_rated_comments, rated_comment)
-                result = top_k_rated_comments
-            else:
-                result = rated_comments
-
-            result.sort(key=lambda x: x[0], reverse=True)
-
-        # show_comments(self.load_comment(comment_offset)
-        #               for score, comment_offset in rated_comments)
-        print(len(result))
-
-    def search_new(self, query, top_k=None, printIdsOnly=True):
+    def search(self, query, top_k=None, printIdsOnly=True):
         self.report.report(f'\nsearching for "{query}":')
 
         def print_comments(offset_iterable):
@@ -528,13 +287,5 @@ if __name__ == '__main__':
 
     for query in open(args.query):
         query = query.strip()
-        # TODO remove
-        if query.startswith('#'):
-            continue
-        if query.startswith('!'):
-            query = query.partition('!')[2].strip()
-            with search_engine.report.measure('old search'):
-                search_engine.search(query, args.topN, args.printIdsOnly)
-        with search_engine.report.measure('new search'):
-            search_engine.search_new(query, args.topN, args.printIdsOnly)
+        search_engine.search(query, args.topN, args.printIdsOnly)
         print('\n\n')
