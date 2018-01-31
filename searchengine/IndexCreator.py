@@ -9,7 +9,7 @@ import sys
 import multiprocessing
 import csv
 from collections import Counter
-
+import numpy
 import Stemmer
 import nltk.tokenize
 from dawg import RecordDAWG
@@ -227,9 +227,17 @@ class IndexCreator():
             with open(f'{self.directory}/reply_to_index.pickle',
                       mode='wb') as f:
                 pickle.dump(reply_to_index, f, pickle.HIGHEST_PROTOCOL)
-            with open(f'{self.directory}/cid_to_offset.pickle',
-                      mode='wb') as f:
-                pickle.dump(cid_to_offset, f, pickle.HIGHEST_PROTOCOL)
+
+            tempa = numpy.array([])
+            ret = []
+            ret2 = []
+            for key in sorted(cid_to_offset.keys()):
+                ret.append(numpy.int64(key))
+                ret2.append(numpy.int64(cid_to_offset[key]))
+            tempa = numpy.array(ret)
+            numpy.save(f'{self.directory}/cids.npy', tempa)
+            tempa2 = numpy.array(ret2)
+            numpy.save(f'{self.directory}/comment_offsets_cid.npy', tempa2)
 
         # merge indices
         with self.report.measure('merging index'):
@@ -240,11 +248,16 @@ class IndexCreator():
                 with open(file_path, mode='rb') as f:
                     self.comment_term_count_dict.update(pickle.load(f))
                 os.remove(file_path)
-
-            with open(f'{self.directory}/comment_term_count_dict.pickle',
-                      mode='wb') as f:
-                pickle.dump(self.comment_term_count_dict,
-                            f, pickle.HIGHEST_PROTOCOL)
+            tempa = numpy.array([])
+            ret = []
+            ret2 = []
+            for key in sorted(self.comment_term_count_dict.keys()):
+                ret.append(numpy.int64(key))
+                ret2.append(numpy.int32(self.comment_term_count_dict[key]))
+            tempa = numpy.array(ret)
+            numpy.save(f'{self.directory}/comment_offsets.npy', tempa)
+            tempa2 = numpy.array(ret2)
+            numpy.save(f'{self.directory}/comment_term_counts.npy', tempa2)
 
             # collection term count
             self.collection_term_count = 0
