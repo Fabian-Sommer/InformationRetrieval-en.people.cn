@@ -8,7 +8,10 @@ import re
 import heapq
 import time
 import functools
+import sys
+import numpy
 from functools import reduce
+from operator import itemgetter
 
 import Stemmer
 import nltk.tokenize
@@ -28,12 +31,14 @@ class SearchEngine():
         self.comment_file = None
         self.index_file = None
         self.symbol_to_encoding_dict = None
+        self.cids = None
+        self.comment_offsets_cid = None
+        self.comment_offsets = None
+        self.comment_term_counts = None
         self.comment_csv_reader = None
-        self.comment_term_count_dict = None
         self.authors_list = None
         self.articles_list = None
         self.reply_to_index = None
-        self.cid_to_offset = None
         self.collection_term_count = 0
         self.stemmer = Stemmer.Stemmer('english')
         self.tokenizer = nltk.tokenize.ToktokTokenizer()
@@ -53,10 +58,10 @@ class SearchEngine():
             self.seek_list.load(f'{directory}/seek_list.dawg')
             self.index_file = open(f'{directory}/index.csv',
                                    mode='r', encoding='utf-8')
-
-        with open(f'{directory}/comment_term_count_dict.pickle',
-                  mode='rb') as f:
-            self.comment_term_count_dict = pickle.load(f)
+        self.comment_offsets = numpy.load(
+            f'{directory}/comment_offsets.npy', mmap_mode=None)
+        self.comment_term_counts = numpy.load(
+            f'{directory}/comment_term_counts.npy', mmap_mode=None)
         with open(f'{directory}/collection_term_count.pickle', mode='rb') as f:
             self.collection_term_count = pickle.load(f)
         self.comment_file = open(f'{directory}/comments.csv', mode='rb')
@@ -68,8 +73,9 @@ class SearchEngine():
             self.articles_list = pickle.load(f)
         with open(f'{directory}/reply_to_index.pickle', mode='rb') as f:
             self.reply_to_index = pickle.load(f)
-        with open(f'{directory}/cid_to_offset.pickle', mode='rb') as f:
-            self.cid_to_offset = pickle.load(f)
+        self.cids = numpy.load(f'{directory}/cids.npy', mmap_mode='r')
+        self.comment_offsets_cid = numpy.load(
+            f'{directory}/comment_offsets_cid.npy', mmap_mode='r')
 
     def load_collection_stem_count(self, stem):
         if self.using_compression:
@@ -97,6 +103,13 @@ class SearchEngine():
             posting_list = self.index_file.readline().rstrip('\n')
             return posting_list.split(posting_list_separator)
 
+    def get_comment_term_count(self, comment_offset):
+        return self.comment_term_counts[numpy.searchsorted(
+            self.comment_offsets, comment_offset)]
+
+    def get_cid_to_offset(self, cid):
+        return self.comment_offsets_cid[numpy.searchsorted(self.cids, cid)]
+
     # returns score based on natural language model with dirichlet smoothing
     # query_terms: list of query terms, stemmed and filtered
     # comment_offsets: list of offsets of comments into comment file
@@ -123,8 +136,8 @@ class SearchEngine():
                     # term not found -> 0 occurences in comment
                     ranked_comments[comment_offsets_index][0] += math.log(
                         (mu * query_term_count / self.collection_term_count)
-                        / (self.comment_term_count_dict[comment_offsets[
-                            comment_offsets_index]] + mu))
+                        / (self.get_comment_term_count(comment_offsets[
+                            comment_offsets_index]) + mu))
                     comment_offsets_index += 1
 
                 if(comment_offsets_index < len(comment_offsets)
@@ -134,15 +147,15 @@ class SearchEngine():
                     ranked_comments[comment_offsets_index][0] += math.log(
                         (fD_query_term + (mu * query_term_count
                                           / self.collection_term_count))
-                        / (self.comment_term_count_dict[comment_offsets[
-                            comment_offsets_index]] + mu))
+                        / (self.get_comment_term_count(comment_offsets[
+                            comment_offsets_index]) + mu))
                     comment_offsets_index += 1
             while comment_offsets_index < len(comment_offsets):
                 # no matches found
                 ranked_comments[comment_offsets_index][0] += math.log(
                     (mu * query_term_count / self.collection_term_count)
-                    / (self.comment_term_count_dict[comment_offsets[
-                        comment_offsets_index]] + mu))
+                    / (self.get_comment_term_count(comment_offsets[
+                        comment_offsets_index]) + mu))
                 comment_offsets_index += 1
 
         return ranked_comments
@@ -153,12 +166,12 @@ class SearchEngine():
         comment_as_list = next(self.comment_csv_reader)
         comment = Comment()
         comment.cid = int(comment_as_list[0])
-        comment.article_url = self.articles_list[int(comment_as_list[1])]
-        comment.author = self.authors_list[int(comment_as_list[2])]
+        # comment.article_url = self.articles_list[int(comment_as_list[1])]
+        # comment.author = self.authors_list[int(comment_as_list[2])]
         comment.text = comment_as_list[3]
-        comment.timestamp = comment_as_list[4]
-        comment.parent_cid = int(comment_as_list[5]) \
-            if comment_as_list[5] != '' else -1
+        # comment.timestamp = comment_as_list[4]
+        # comment.parent_cid = int(comment_as_list[5]) \
+        #    if comment_as_list[5] != '' else -1
         comment.upvotes = int(comment_as_list[6]) \
             if len(comment_as_list) >= 7 else 0
         comment.downvotes = int(comment_as_list[7]) \
@@ -167,7 +180,7 @@ class SearchEngine():
         return comment
 
     def load_comment_from_cid(self, cid):
-        return self.load_comment(self.cid_to_offset[cid])
+        return self.load_comment(self.get_cid_to_offset(cid))
 
     def load_cid_only(self, offset):
         self.comment_file.seek(offset)
@@ -508,8 +521,7 @@ class SearchEngine():
 
 
 if __name__ == '__main__':
-    # TODO change to '.' before submitting
-    data_directory = 'data/small_guardian'
+    data_directory = 'data/guardian'  # TODO change to '.' before submitting
     search_engine = SearchEngine()
     search_engine.load_index(data_directory)
     search_engine.report.report('index loaded')
