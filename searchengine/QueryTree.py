@@ -40,9 +40,6 @@ class TokenNode():
             self.kind = 'keyword'
             self.keyword = query_token
             self.query_token = self.keyword
-        pass
-    # def resolve(self, search_function):
-    #     pass
 
     def __repr__(self):
         return f'TokenNode("{self.raw_query_token}")'
@@ -60,19 +57,6 @@ class AndNode():
 
         self.children = children
         self.is_negated = False
-        # self.result = []
-
-    # def resolve(self):
-    #     result = set()
-    #     to_be_removed = []
-    #     for child in self.children:
-    #         child_result, negated = child.resolve()
-    #         if negated:
-    #             to_be_removed.append(child_result)
-    #         else:
-    #             result.update(child_result)
-    #     result.difference_update(*to_be_removed)
-    #     return result, self.is_negated
 
     def __repr__(self):
         return f'AndNode({self.children})'
@@ -87,18 +71,6 @@ class OrNode():
 
         self.children = children
         self.is_negated = False
-        # self.result = []
-
-    # def resolve(self):
-    #     result = set()
-    #     for child in self.children:
-    #         child_result, negated = child.resolve()
-    #         if negated:
-    #             print(f'WARNING: ignoring {child.query_token}'
-    #                   'NOT always has to be used with AND')
-    #         else:
-    #             result.update(child_result)
-    #     return result, self.is_negated
 
     def __repr__(self):
         return f'OrNode({self.children})'
@@ -119,7 +91,7 @@ class SpaceNode():
         return f'SpaceNode({self.children})'
 
 
-def build(query):
+def build_query_tree(query):
     query = query.strip()
     root_node = None
     if ' AND ' in query or ' OR ' in query or 'NOT ' in query:  # boolean query
@@ -129,7 +101,6 @@ def build(query):
 
         # initialize, create TokenNodes
         for match in re.findall("([^']+)|('[^']+'\*?)", query):
-            print(match[0], match[1])
             if match[1] != '':  # second capture group ('[^']+'\*?)
                 query_list.append(TokenNode(match[1]))
             else:  # first capture group ([^']+)
@@ -167,4 +138,4 @@ def build(query):
 
 
 if __name__ == '__main__':
-    print(build("NOT merkel NOT xi OR 'something something'"))
+    print(build_query_tree("NOT merkel AND xi OR 'something something'"))

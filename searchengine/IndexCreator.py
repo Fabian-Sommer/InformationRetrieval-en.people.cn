@@ -60,8 +60,6 @@ def process_comments_file(directory, start_offset, end_offset,
                     reply_to_index[parent_cid].append(cid)
 
             previous_offset = f.tell()
-            if start_offset == 0 and len(comment_list) % 5000 == 0:
-                print(f'about {previous_offset / end_offset:7.2%} processed')
 
             if len(comment_list) == comments_per_output_file \
                     or previous_offset == end_offset:

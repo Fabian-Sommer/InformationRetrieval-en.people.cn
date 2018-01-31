@@ -13,7 +13,7 @@ from dawg import RecordDAWG
 from Report import Report
 from Common import *
 import Huffman
-import QueryTree
+from QueryTree import build_query_tree
 from IndexCreator import IndexCreator
 
 
@@ -167,35 +167,59 @@ class SearchEngine():
         return [int(x.partition(',')[0]) for x in posting_list_parts[2:]]
 
     def phrase_query(self, phrase, suffix=''):
-        if ' ' not in phrase and suffix == '':
-            return self.basic_search(phrase)
+        if phrase == '' and suffix != '':
+            # suffix of the phrase now becomes prefix for a prefix query
+            return self.prefix_query(suffix)
 
-        stem_offset_size_list = []  # may contain duplicates!
-        for sentence in nltk.tokenize.sent_tokenize(phrase):
-            for token in self.tokenizer.tokenize(sentence):
-                stem = self.stemmer.stemWord(token)
-                if stem not in self.seek_list:
-                    continue
-                stem_offset_size_list.append((stem, self.seek_list[stem]))
+        if ' ' not in phrase:
+            offsets = self.keyword_query(phrase)
+        else:
+            stem_offset_size_list = []  # may contain duplicates!
+            for sentence in nltk.tokenize.sent_tokenize(phrase):
+                for token in self.tokenizer.tokenize(sentence):
+                    stem = self.stemmer.stemWord(token)
+                    if stem not in self.seek_list:
+                        continue
+                    stem_offset_size_list.append((stem, self.seek_list[stem]))
 
-        # sort by posting_list size
-        stem_offset_size_list.sort(key=lambda t: t[1][0][1])
-        smallest_stem = stem_offset_size_list[0][0]
-        second_smallest_stem = stem_offset_size_list[1][0] \
-            if len(stem_offset_size_list) > 1 and \
-            stem_offset_size_list[1][1][0][1] < \
-            self.collection_term_count / 100 else ''
+            if len(stem_offset_size_list) == 0:
+                return []
+
+            # sort by posting_list size
+            stem_offset_size_list.sort(key=lambda t: t[1][0][1])
+            smallest_stem = stem_offset_size_list[0][0]
+            second_smallest_stem = stem_offset_size_list[1][0] \
+                if len(stem_offset_size_list) >= 2 and \
+                stem_offset_size_list[1][1][0][1] < \
+                self.collection_term_count / 100 else ''
+            offsets = self.get_offsets_for_stem(smallest_stem)
+            if second_smallest_stem != '':
+                offsets = set(offsets)
+                offsets.intersection_update(
+                    self.get_offsets_for_stem(second_smallest_stem))
+
         result = []
         phrase_to_check = phrase if suffix == '' else f'{phrase} {suffix}'
-        offsets = set(self.get_offsets_for_stem(smallest_stem))
-        if second_smallest_stem != '':
-            offsets.intersection_update(
-                self.get_offsets_for_stem(second_smallest_stem))
         for offset in offsets:
             comment = self.load_comment(offset)
             if phrase_to_check in comment.text.lower():
                 result.append(offset)
         return result
+
+    def prefix_query(self, prefix):
+        stems_with_prefix = self.seek_list.keys(prefix)
+        result = []
+        for stem in stems_with_prefix:
+            result.extend(self.get_offsets_for_stem(stem))
+        return result
+
+    def keyword_query(self, keyword):
+        return self.get_offsets_for_stem(
+            self.stemmer.stemWord(keyword))
+
+    def reply_to_query(self, target_cid):
+        return [self.cid_to_offset[cid]
+                for cid in self.reply_to_index.get(target_cid, ())]
 
     def basic_search(self, token_node):
         # search for a single query token
@@ -206,37 +230,27 @@ class SearchEngine():
         elif token_node.kind == 'phrase':  # phrase query: 'european union'
             return self.phrase_query(token_node.phrase)
         elif token_node.kind == 'prefix':  # prefix query: isra*
-            stems_with_prefix = self.seek_list.keys(token_node.prefix)
-            result = []
-            for stem in stems_with_prefix:
-                result.extend(self.get_offsets_for_stem(stem))
-            return result
+            return self.prefix_query(token_node.prefix)
         elif token_node.kind == 'reply_to':  # ReplyTo query: ReplyTo:12345
-            if token_node.target_cid not in self.reply_to_index.keys():
-                return []
-
-            return [self.cid_to_offset[cid]
-                    for cid in self.reply_to_index[token_node.target_cid]]
+            return self.reply_to_query(token_node.target_cid)
         elif token_node.kind == 'keyword':  # keyword query: merkel
-            return self.get_offsets_for_stem(
-                self.stemmer.stemWord(token_node.keyword))
+            return self.keyword_query(token_node.keyword)
         else:
             raise RuntimeError(f'unknown token_node.kind: {token_node.kind}')
+
+    def print_comments(self, offset_iterable, printIdsOnly=True):
+        if printIdsOnly:
+            print(','.join((self.load_cid_only(offset)
+                            for offset in offset_iterable)))
+        else:
+            for offset in offset_iterable:
+                comment = self.load_comment(offset)
+                print(f'{comment.cid},{comment.text}')
 
     def search(self, query, top_k=None, printIdsOnly=True):
         print(f'\nsearching for "{query}":')
 
-        def print_comments(offset_iterable):
-            offset_iterable = list(offset_iterable)
-            if printIdsOnly:
-                print(','.join((self.load_cid_only(offset)
-                                for offset in offset_iterable)))
-            else:
-                for offset in offset_iterable:
-                    comment = self.load_comment(offset)
-                    print(f'{comment.cid},{comment.text}')
-
-        query_tree_root = QueryTree.build(query)
+        query_tree_root = build_query_tree(query)
         if query_tree_root.is_boolean_query:
             or_result = set()
             with self.report.measure('searching'):
@@ -254,7 +268,7 @@ class SearchEngine():
                     and_result.difference_update(*to_be_removed)
                     or_result.update(and_result)
 
-            print_comments(or_result)
+            self.print_comments(or_result, printIdsOnly)
         else:  # non bool query
             with self.report.measure('searching'):
                 children_results = (self.basic_search(child)
@@ -277,7 +291,8 @@ class SearchEngine():
 
                 result.sort(key=lambda x: x[0], reverse=True)
 
-            print_comments((offset for score, offset in result))
+            self.print_comments(
+                (offset for score, offset in result), printIdsOnly)
 
 
 if __name__ == '__main__':
@@ -294,6 +309,5 @@ if __name__ == '__main__':
         from IRWS_Argument_Parsing import args
 
         for query in open(args.query):
-            query = query.strip()
-            search_engine.search(query, args.topN, args.printIdsOnly)
+            search_engine.search(query.strip(), args.topN, args.printIdsOnly)
             print('\n\n')
