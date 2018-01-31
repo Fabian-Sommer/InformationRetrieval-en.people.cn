@@ -88,16 +88,6 @@ def decode(binary_data, symbol_to_encoding_dict):
     return ''.join(decoded_chars)
 
 
-def decode_first(binary_data, symbol_to_encoding_dict):
-    padding = 0
-    bit_array = BitArray()
-    bit_array.frombytes(binary_data)
-    while bool(bit_array[padding]):
-        padding += 1
-    decoded_chars = bit_array[padding+1:].decode(symbol_to_encoding_dict)
-    return int(''.join(decoded_chars).partition(posting_list_separator)[0])
-
-
 if __name__ == '__main__':
     string = 'hallo'
     symbol_to_frequency_dict = {'h': 120, 'a': 20, 'l': 2, 'o': 73}

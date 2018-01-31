@@ -281,8 +281,7 @@ class SearchEngine():
 
 
 if __name__ == '__main__':
-    # TODO change to '.' before submitting
-    data_directory = 'data/enpeople'
+    data_directory = '.'
     if argv[1] == 'Index:comments.csv':
         index_creator = IndexCreator(data_directory)
         index_creator.create_index()

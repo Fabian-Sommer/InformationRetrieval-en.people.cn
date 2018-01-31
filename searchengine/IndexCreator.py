@@ -150,9 +150,7 @@ class IndexCreator():
         self.directory = directory
         assert(os.path.isfile(f'{self.directory}/comments.csv'))
         sys.setrecursionlimit(10000)
-        self.report = Report(
-            quiet_mode=__name__ != '__main__',
-            log_file_path=f'{directory}/log_IndexCreator.py.csv')
+        self.report = Report(quiet_mode=False)
 
     def create_index(self):
         # read csv to create comment_list
@@ -438,10 +436,6 @@ class IndexCreator():
                     self.report.progress(i, ' index lines compressed', 100000)
 
                     offset += len(encoded_line)
-            with open(f'{self.directory}/compressed_seek_list.pickle',
-                      mode='wb') as f:
-                pickle.dump(self.compressed_seek_list, f,
-                            pickle.HIGHEST_PROTOCOL)
             self.compressed_seek_list = \
                 RecordDAWG('>QQ', self.compressed_seek_list)
             self.compressed_seek_list.save(
