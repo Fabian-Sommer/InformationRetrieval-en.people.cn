@@ -215,7 +215,7 @@ class SearchEngine():
             if token_node.target_cid not in self.reply_to_index.keys():
                 return []
 
-            return [self.cid_to_offset[cid]
+            return [self.get_cid_to_offset(cid)
                     for cid in self.reply_to_index[token_node.target_cid]]
         elif token_node.kind == 'keyword':  # keyword query: merkel
             return self.get_offsets_for_stem(
