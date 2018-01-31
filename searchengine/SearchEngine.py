@@ -4,6 +4,7 @@ import pickle
 import math
 import heapq
 import numpy
+from sys import argv
 
 import Stemmer
 import nltk.tokenize
@@ -13,7 +14,7 @@ from Report import Report
 from Common import *
 import Huffman
 import QueryTree
-from IRWS_Argument_Parsing import args
+from IndexCreator import IndexCreator
 
 
 class SearchEngine():
@@ -223,7 +224,7 @@ class SearchEngine():
             raise RuntimeError(f'unknown token_node.kind: {token_node.kind}')
 
     def search(self, query, top_k=None, printIdsOnly=True):
-        self.report.report(f'\nsearching for "{query}":')
+        print(f'\nsearching for "{query}":')
 
         def print_comments(offset_iterable):
             offset_iterable = list(offset_iterable)
@@ -280,12 +281,20 @@ class SearchEngine():
 
 
 if __name__ == '__main__':
-    data_directory = 'data/guardian'  # TODO change to '.' before submitting
-    search_engine = SearchEngine()
-    search_engine.load_index(data_directory)
-    search_engine.report.report('index loaded')
+    # TODO change to '.' before submitting
+    data_directory = 'data/enpeople'
+    if argv[1] == 'Index:comments.csv':
+        index_creator = IndexCreator(data_directory)
+        index_creator.create_index()
+        index_creator.report.all_time_measures()
+    else:
+        search_engine = SearchEngine()
+        search_engine.load_index(data_directory)
+        print('index loaded')
 
-    for query in open(args.query):
-        query = query.strip()
-        search_engine.search(query, args.topN, args.printIdsOnly)
-        print('\n\n')
+        from IRWS_Argument_Parsing import args
+
+        for query in open(args.query):
+            query = query.strip()
+            search_engine.search(query, args.topN, args.printIdsOnly)
+            print('\n\n')

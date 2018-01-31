@@ -159,7 +159,7 @@ class IndexCreator():
 
         with self.report.measure('processing comments.csv'):
             number_of_processes = min(os.cpu_count(), 2)
-            self.report.report(f'starting {number_of_processes} processes')
+            print(f'starting {number_of_processes} processes')
             csv_size = os.stat(f'{self.directory}/comments.csv').st_size
             with multiprocessing.Pool(processes=number_of_processes) as pool:
                 offsets = [0]
@@ -326,7 +326,7 @@ class IndexCreator():
                             # end of file
                             global_active_indices[key] = False
                             global_active_file_count -= 1
-                            print('one file out,',
+                            print('one file out, '
                                   f'{global_active_file_count} remaining')
                         else:
                             line = linetest.rstrip('\n').split(
@@ -452,24 +452,4 @@ if __name__ == '__main__':
     data_directory = 'data/fake' if len(sys.argv) < 2 else sys.argv[1]
     index_creator = IndexCreator(data_directory)
     index_creator.create_index()
-    # TODO cleanup here
-    # index_creator.huffman_compression()
-    # with open(f'{data_directory}/huffman_tree.pickle',
-    #           mode='rb') as huffman_tree_file, \
-    #         open(f'{data_directory}/compressed_index',
-    #              mode='rb') as compressed_index_file:
-    #     symbol_to_encoding_dict = pickle.load(symbol_to_encoding_dict_file)
-    #     compressed_seek_list = RecordDAWG('>II')
-    #     compressed_seek_list.load(
-    #         f'{data_directory}/compressed_seek_list.dawg')
-    #     offset, length = compressed_seek_list['xi'][0]
-    #     compressed_index_file.seek(offset)
-    #     binary_data = compressed_index_file.read(length)
-    #     decoded_string = Huffman.decode(binary_data, symbol_to_encoding_dict)
-    #     print(f'decoded_string: {decoded_string}')
-    #     # prefix = 'eu'
-    #     # print(f'terms starting with {prefix}:',
-    #     #       f'{compressed_seek_list.keys(prefix)}')
-    #     # for key, value in compressed_seek_list.iteritems(prefix):
-    #     #     print(key, value)
     index_creator.report.all_time_measures()
